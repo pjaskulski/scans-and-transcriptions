@@ -9,3 +9,5 @@ A simple scan and transcription viewer with the option of reading scans using th
 ![Screen](/doc/screen_scan_transcript_przetwarzanie.png)
 
 ![Screen](/doc/toolbar.png)
+
+![Screen](/doc/screen_scan_transcript_przetwarzanie_seria.png)

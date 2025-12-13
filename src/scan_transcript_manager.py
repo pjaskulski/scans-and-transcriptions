@@ -6,6 +6,7 @@ from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
+from ttkbootstrap.widgets.scrolled import ScrolledFrame
 from docx import Document
 from dotenv import load_dotenv
 from google import genai
@@ -37,6 +38,10 @@ class ManuscriptEditor:
         self.last_mouse_y = 0
         self.is_transcribing = False
         self.btn_ai = None
+
+        self.batch_log_label = None
+        self.batch_vars = None
+        self.batch_progress = None
 
         # główny kontener
         self.paned = ttk.Panedwindow(root, orient=HORIZONTAL)
@@ -83,11 +88,11 @@ class ManuscriptEditor:
         ttk.Label(self.folder_status_frame, text="Katalog:",
                   font=("Segoe UI", 8, "bold")).pack(side=LEFT)
 
-        # Etykieta ze ścieżką
+        # etykieta ze ścieżką
         ttk.Label(self.folder_status_frame, textvariable=self.current_folder_var,
                   font=("Segoe UI", 8), bootstyle="dark").pack(side=LEFT, padx=5)
 
-        # Przycisk zmiany
+        # przycisk zmiany folderu ze skanami
         ttk.Button(self.folder_status_frame, text="[ZMIEŃ]", command=self.select_folder,
                    bootstyle="link-secondary", cursor="hand2", padding=0).pack(side=RIGHT)
 
@@ -143,6 +148,10 @@ class ManuscriptEditor:
                                  command=self.start_ai_transcription,
                                  bootstyle="danger")
         self.btn_ai.pack(side=LEFT, fill=X, expand=True, padx=2)
+
+        # Gemini seria
+        ttk.Button(frame_ai, text="Seria", command=self.open_batch_dialog,
+                   bootstyle="danger").pack(side=LEFT, fill=X, expand=True, padx=2)
 
         # zapis wyników
         ttk.Button(self.toolbar,
@@ -208,7 +217,7 @@ class ManuscriptEditor:
             except Exception as e:
                 messagebox.showerror("Błąd", f"Nie można wczytać {filename}: {e}", parent=self.root)
         else:
-            messagebox.showerror("Pred użyciem Gemini wskaż plik z promptem.", str(e), parent=self.root)
+            messagebox.showerror("Przed użyciem Gemini wskaż plik z promptem.", str(e), parent=self.root)
         self.prompt_filename_var.set("Prompt: Brak (wybierz plik)")
 
 
@@ -228,10 +237,10 @@ class ManuscriptEditor:
         if folder_path:
             display_path = folder_path
             if len(display_path) > 40:
-                display_path = "..." + display_path[-37:] # Pokaż ostatnie 37 znaków
+                display_path = "..." + display_path[-37:] # ostatnie 37 znaków
             self.current_folder_var.set(display_path)
 
-            # Załadowanie plików
+            # załadowanie plików
             self.load_file_list(folder_path)
 
 
@@ -620,6 +629,189 @@ class ManuscriptEditor:
             print(f"Błąd lupy: {e}")
 
 
+    def open_batch_dialog(self):
+        """ otwiera okno dialogowe do przetwarzania seryjnego """
+        if self.is_transcribing:
+            messagebox.showwarning("Uwaga", "Trwa przetwarzanie. Poczekaj na zakończenie.", parent=self.root)
+            return
+
+        if not self.file_pairs:
+            messagebox.showinfo("Brak plików", "Brak plików do przetworzenia.", parent=self.root)
+            return
+
+        # tworzenie okna dialogowego
+        batch_win = tk.Toplevel(self.root)
+        batch_win.title("Przetwarzanie Seryjne")
+        batch_win.geometry("700x700")
+        batch_win.transient(self.root)
+
+        # nagłówek
+        ttk.Label(batch_win, text="Wybierz pliki do transkrypcji:", font=("Segoe UI", 12, "bold")).pack(pady=10)
+        ttk.Label(batch_win, text="Zaznaczono domyślnie pliki bez transkrypcji lub puste.",
+                  bootstyle="secondary", font=("Segoe UI", 9)).pack(pady=(0, 10))
+
+        # kontener na listę z przewijaniem
+        list_frame = ScrolledFrame(batch_win, autohide=False)
+        list_frame.pack(fill=BOTH, expand=True, padx=10, pady=5)
+
+        self.batch_vars = [] # pary (indeks_pliku, zmienna_boolean)
+
+        for idx, pair in enumerate(self.file_pairs):
+            txt_path = pair['txt']
+
+            # logika domyślnego zaznaczania
+            should_select = False
+            status_text = ""
+
+            if not os.path.exists(txt_path):
+                should_select = True
+                status_text = "(brak txt)"
+            elif os.path.getsize(txt_path) == 0:
+                should_select = True
+                status_text = "(pusty plik)"
+            else:
+                status_text = "(gotowy)"
+
+            var = tk.BooleanVar(value=should_select)
+            self.batch_vars.append((idx, var))
+
+            # wiersz dla pliku
+            row = ttk.Frame(list_frame)
+            row.pack(fill=X, pady=2)
+
+            cb = ttk.Checkbutton(row, text=f"{pair['name']} {status_text}", variable=var, bootstyle="round-toggle")
+            cb.pack(side=LEFT)
+
+        # panel przycisków sterujących
+        btn_panel = ttk.Frame(batch_win, padding=10)
+        btn_panel.pack(fill=X, side=BOTTOM)
+
+        # logi postępu
+        self.batch_log_label = ttk.Label(batch_win, text="Oczekiwanie na start...", bootstyle="inverse-secondary")
+        self.batch_log_label.pack(fill=X, side=BOTTOM, padx=10)
+
+        self.batch_progress = ttk.Progressbar(batch_win, mode='determinate', bootstyle="success-striped")
+        self.batch_progress.pack(fill=X, side=BOTTOM, padx=10, pady=5)
+
+        # funkcje przycisków
+        def select_all():
+            for _, v in self.batch_vars:
+                v.set(True)
+
+        def select_none():
+            for _, v in self.batch_vars:
+                v.set(False)
+
+        def start_batch():
+            selected_indices = [idx for idx, var in self.batch_vars if var.get()]
+            if not selected_indices:
+                messagebox.showwarning("Info", "Nie wybrano żadnych plików.", parent=batch_win)
+                return
+
+            # blokada przycisków
+            btn_start.config(state="disabled")
+
+            # uruchomienie wątku
+            self.is_transcribing = True
+            thread = threading.Thread(target=self._batch_worker, args=(selected_indices, batch_win, btn_start))
+            thread.daemon = True
+            thread.start()
+
+        ttk.Button(btn_panel, text="Zaznacz wszystkie", command=select_all, bootstyle="outline-secondary").pack(side=LEFT, padx=5)
+        ttk.Button(btn_panel, text="Odznacz wszystkie", command=select_none, bootstyle="outline-secondary").pack(side=LEFT, padx=5)
+
+        btn_start = ttk.Button(btn_panel, text="URUCHOM PRZETWARZANIE", command=start_batch, bootstyle="danger")
+        btn_start.pack(side=RIGHT, padx=5)
+
+
+    def _batch_worker(self, selected_indices, window, btn_start):
+        """ Wątek przetwarzający listę plików """
+        total = len(selected_indices)
+        errors = 0
+
+        for i, idx in enumerate(selected_indices):
+            # czy okno nie zostało zamknięte
+            if not window.winfo_exists():
+                break
+
+            pair = self.file_pairs[idx]
+            img_path = pair['img']
+            txt_path = pair['txt']
+
+            # aktualizacja GUI
+            progress_pct = (i / total) * 100
+            msg = f"Przetwarzanie [{i+1}/{total}]: {pair['name']}..."
+
+            self.root.after(0, lambda m=msg, v=progress_pct: self._update_batch_ui(m, v))
+
+            try:
+                # wywołanie API (ta sama metoda co przy pojedynczym pliku)
+                result_text = self._call_gemini_api(img_path)
+
+                # zapis do pliku
+                with open(txt_path, 'w', encoding='utf-8') as f:
+                    f.write(result_text + '\n')
+
+            except Exception as e:
+                errors += 1
+                print(f"Błąd przy pliku {pair['name']}: {e}")
+
+        self.is_transcribing = False
+
+        # zakończono
+        if window.winfo_exists():
+            final_msg = f"Zakończono! Przetworzono: {total}. Błędy: {errors}."
+            self.root.after(0, lambda: self._update_batch_ui(final_msg, 100))
+            self.root.after(0, lambda: btn_start.config(state="normal"))
+            self.root.after(0, lambda: messagebox.showinfo("Koniec", final_msg, parent=window))
+
+            # odświeżanie widok w głównym oknie (jeśli aktualnie wyświetlany plik był zmieniony)
+            self.root.after(0, lambda: self.load_pair(self.current_index))
+
+
+    def _update_batch_ui(self, message, progress_value):
+        """ pomocnicza funkcja do aktualizacji UI w oknie batch """
+        try:
+            self.batch_log_label.config(text=message)
+            self.batch_progress['value'] = progress_value
+        except Exception as e:
+            print(e)
+
+
+    def _call_gemini_api(self, image_path):
+        """ wspólna funkcja wołająca API, zwraca tekst transkrypcji """
+        client = genai.Client(api_key=self.api_key)
+
+        with open(image_path, 'rb') as f:
+            image_bytes = f.read()
+
+        model_name = "gemini-3-pro-preview"
+
+        contents = [
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part.from_text(text=self.prompt_text),
+                    types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg')
+                ]
+            )
+        ]
+
+        generate_content_config = types.GenerateContentConfig(
+            temperature=0,
+            thinkingConfig=types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW),
+            media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH
+        )
+
+        response = client.models.generate_content(
+            model=model_name,
+            contents=contents,
+            config=generate_content_config
+        )
+
+        return response.text
+
+
     def start_ai_transcription(self):
         """ inicjuje proces transkrypcji w tle """
         if not self.file_pairs or self.is_transcribing:
@@ -648,75 +840,41 @@ class ManuscriptEditor:
         img_path = current_pair['img']
 
         # uruchomienie wątku
-        thread = threading.Thread(target=self._ai_worker, args=(img_path,))
+        thread = threading.Thread(target=self._single_worker, args=(img_path,))
         thread.daemon = True
         thread.start()
 
 
-    def _ai_worker(self, image_path):
-        """ wywołanie modelu pzez API, kod wykonywany w oddzielnym wątku """
+    def _single_worker(self, image_path):
+        """ wątek dla pojedynczego pliku """
         try:
-            client = genai.Client(api_key=self.api_key)
-
-            with open(image_path, 'rb') as f:
-                image_bytes = f.read()
-
-            model_name = "gemini-3-pro-preview"
-
-            contents = [
-                types.Content(
-                    role="user",
-                    parts=[
-                        types.Part.from_text(text=self.prompt_text),
-                        types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg')
-                    ]
-                )
-            ]
-
-            generate_content_config = types.GenerateContentConfig(
-                temperature=0,
-                thinkingConfig=types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW),
-                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH
-            )
-
-            response = client.models.generate_content(
-                model=model_name,
-                contents=contents,
-                config=generate_content_config
-            )
-
-            result_text = response.text
-
-            # przekazanie wyniku do wątku głównego
-            self.root.after(0, self._ai_finished, True, result_text)
-
+            result_text = self._call_gemini_api(image_path)
+            self.root.after(0, self._single_finished, True, result_text)
         except Exception as e:
-            self.root.after(0, self._ai_finished, False, str(e))
+            self.root.after(0, self._single_finished, False, str(e))
 
 
-    def _ai_finished(self, success, content):
+    def _single_finished(self, success, content):
         """ aktualizacja GUI po zakończeniu pracy wątku """
         self.progress_bar.stop()
         self.progress_bar.pack_forget()
         self.is_transcribing = False
-
         self.btn_ai.config(state="normal", text="Gemini")
         self.text_area.config(state="normal")
 
         if success:
-            # wstawienie tekstu
             self.text_area.delete(1.0, tk.END)
             self.text_area.insert(tk.END, content)
-
-            # automatyczny zapis
-            self.save_current_text(silent=False)
+            self.save_current_text(False)
             messagebox.showinfo("Sukces",
                                 "Transkrypcja zakończona pomyślnie.",
                                 parent=self.root)
+            self.root.focus_set()
         else:
             messagebox.showerror("Błąd transkrypcji",
-                                 f"Wystąpił błąd:\n{content}",
+                                 f"Info:\n{content}",
                                  parent=self.root)
+            self.root.focus_set()
 
 
 # ----------------------------------- MAIN -------------------------------------
