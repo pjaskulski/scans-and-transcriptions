@@ -76,7 +76,7 @@ class ManuscriptEditor:
         self.right_frame = ttk.Frame(self.paned)
         self.paned.add(self.right_frame, weight=1)
 
-        # --- 1. Pasek Katalogu (NOWY) ---
+        # pasek ścieżki do Katalogu
         self.folder_status_frame = ttk.Frame(self.right_frame)
         self.folder_status_frame.pack(fill=X, padx=5, pady=(0, 5))
 
@@ -85,7 +85,7 @@ class ManuscriptEditor:
 
         # Etykieta ze ścieżką
         ttk.Label(self.folder_status_frame, textvariable=self.current_folder_var,
-                  font=("Segoe UI", 8), bootstyle="secondary").pack(side=LEFT, padx=5)
+                  font=("Segoe UI", 8), bootstyle="dark").pack(side=LEFT, padx=5)
 
         # Przycisk zmiany
         ttk.Button(self.folder_status_frame, text="[ZMIEŃ]", command=self.select_folder,
@@ -171,7 +171,7 @@ class ManuscriptEditor:
         self.prompt_status_frame.pack(fill=X, padx=(5,0), pady=(0, 5))
 
         ttk.Label(self.prompt_status_frame, textvariable=self.prompt_filename_var,
-                  font=("Segoe UI", 8), bootstyle="secondary").pack(side=LEFT, padx=5, pady=2)
+                  font=("Segoe UI", 8), bootstyle="dark").pack(side=LEFT, padx=5, pady=2)
 
         # przycisk zmiany promptu
         ttk.Button(self.prompt_status_frame, text="[ZMIEŃ PROMPT]", command=self.select_prompt_file,
