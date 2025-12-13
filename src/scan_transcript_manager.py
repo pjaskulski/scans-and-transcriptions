@@ -50,12 +50,13 @@ class ManuscriptEditor:
         self.canvas.bind("<MouseWheel>", self.on_mouse_wheel)
         self.canvas.bind("<Button-4>", self.on_mouse_wheel)
         self.canvas.bind("<Button-5>", self.on_mouse_wheel)
+        self.canvas.bind("<Button-3>", self.show_magnifier)
 
         # pasek statusu pod obrazem
         self.zoom_label = ttk.Label(self.left_frame, text="Zoom: 100%", font=("Segoe UI", 9))
         self.zoom_label.pack(side=RIGHT, pady=5)
         ttk.Label(self.left_frame,
-                  text="LPM: Przesuwanie | Scroll: Zoom",
+                  text="LPM: Przesuwanie | Scroll: Zoom | RPM: okno lupy",
                   font=("Segoe UI", 8), bootstyle="secondary").pack(side=LEFT, pady=5)
 
         # prawy panel (na edytor transkrypcji)
@@ -405,6 +406,79 @@ class ManuscriptEditor:
             print(e)
 
         self.root.destroy()
+
+
+    def show_magnifier(self, event):
+        """ wyświetlanie lupę (okno powiększające) w miejscu kursora """
+        if not self.original_image:
+            return
+
+        # ustawienia lupy
+        MAG_WIDTH, MAG_HEIGHT = 750, 300  # rozmiar okna lupy
+        ZOOM_FACTOR = 2.0                 # powiększenie względem oryginału (200%)
+
+        # współrzędne kliknięcia względem oryginalnego obrazu
+        # event.x/y -  współrzędne na canvas
+        # self.img_x/y -  przesunięcie obrazu (panning)
+        # self.scale - aktualny zoom głównego widoku
+
+        # pozycja pixela oryginału
+        orig_x = (event.x - self.img_x) / self.scale
+        orig_y = (event.y - self.img_y) / self.scale
+
+        # obszar do wycięcia z oryginału
+        crop_w = MAG_WIDTH / ZOOM_FACTOR
+        crop_h = MAG_HEIGHT / ZOOM_FACTOR
+
+        x1 = orig_x - (crop_w / 2)
+        y1 = orig_y - (crop_h / 2)
+        x2 = x1 + crop_w
+        y2 = y1 + crop_h
+
+        try:
+            # wycięcie i przeskalowanie
+            region = self.original_image.crop((x1, y1, x2, y2))
+
+            # skalowanie do rozmiaru okna lupy
+            magnified_img = region.resize((MAG_WIDTH, MAG_HEIGHT), Image.Resampling.BILINEAR)
+            tk_mag_img = ImageTk.PhotoImage(magnified_img)
+
+            # okno lupy
+            top = tk.Toplevel(self.root)
+            top.transient(self.root) # info dla menedżera okien, że to okno jest "pomocnicze" dla głównego
+            top.overrideredirect(True) # usunięcie belki tytułowej i ramek
+
+            # pozycjonowanie okna - wycentrowane na kursorze
+            pos_x = int(event.x_root - (MAG_WIDTH / 2))
+            pos_y = int(event.y_root - (MAG_HEIGHT / 2))
+            top.geometry(f"{MAG_WIDTH}x{MAG_HEIGHT}+{pos_x}+{pos_y}")
+
+            # dodatkowa ramka dla estetyki (np. kolor 'info' z bootstrapa)
+            frame = ttk.Frame(top, bootstyle="info", padding=2)
+            frame.pack(fill=BOTH, expand=True)
+
+            # etykieta z obrazem
+            label = ttk.Label(frame, image=tk_mag_img, background="white")
+            label.image = tk_mag_img # zachowanie referencji
+            label.pack(fill=BOTH, expand=True)
+
+            # zamykanie lupy
+            def close_magnifier(_=None):
+                top.destroy()
+
+            # przejęcie focusu, aby zadziałał Esc i FocusOut
+            top.focus_set()
+
+            # zamknięcie przy kliknięciu lewym przyciskiem myszy wewnątrz,
+            # Esc, lub utracie fokusu (klik na zewnątrznej kontrolce np. polu tekstowym)
+            top.bind("<Button-1>", close_magnifier)
+            top.bind("<Escape>", close_magnifier)
+            top.bind("<FocusOut>", close_magnifier)
+
+
+
+        except Exception as e:
+            print(f"Błąd lupy: {e}")
 
 
 # ----------------------------------- MAIN -------------------------------------
