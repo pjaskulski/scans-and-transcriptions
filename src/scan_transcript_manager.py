@@ -22,6 +22,8 @@ class ManuscriptEditor:
         self.api_key = ""
         self.prompt_text = ""
         self.prompt_filename_var = tk.StringVar(value="Brak promptu")
+        self.current_folder_var = tk.StringVar(value="Nie wybrano katalogu")
+
         self._init_environment()
 
         self.file_pairs = []
@@ -74,10 +76,25 @@ class ManuscriptEditor:
         self.right_frame = ttk.Frame(self.paned)
         self.paned.add(self.right_frame, weight=1)
 
+        # --- 1. Pasek Katalogu (NOWY) ---
+        self.folder_status_frame = ttk.Frame(self.right_frame)
+        self.folder_status_frame.pack(fill=X, padx=5, pady=(0, 5))
+
+        ttk.Label(self.folder_status_frame, text="Katalog:",
+                  font=("Segoe UI", 8, "bold")).pack(side=LEFT)
+
+        # Etykieta ze ścieżką
+        ttk.Label(self.folder_status_frame, textvariable=self.current_folder_var,
+                  font=("Segoe UI", 8), bootstyle="secondary").pack(side=LEFT, padx=5)
+
+        # Przycisk zmiany
+        ttk.Button(self.folder_status_frame, text="[ZMIEŃ]", command=self.select_folder,
+                   bootstyle="link-secondary", cursor="hand2", padding=0).pack(side=RIGHT)
+
         # ramka na tekst
         self.editor_frame = ttk.Labelframe(self.right_frame,
                                            text="Transkrypcja",
-                                           bootstyle="warning")
+                                           bootstyle="primary")
         self.editor_frame.pack(fill=BOTH, expand=True, padx=(5,0))
 
         # informacja o pliku
@@ -189,15 +206,32 @@ class ManuscriptEditor:
                 filename = os.path.basename(prompt_path)
                 self.prompt_filename_var.set(f"Prompt: {filename}")
             except Exception as e:
-                messagebox.showerror("Błąd", f"Nie można wczytać {filename}: {e}")
+                messagebox.showerror("Błąd", f"Nie można wczytać {filename}: {e}", parent=self.root)
         else:
-            messagebox.showerror("Pred użyciem Gemini wskaż plik z promptem.", str(e))
+            messagebox.showerror("Pred użyciem Gemini wskaż plik z promptem.", str(e), parent=self.root)
+        self.prompt_filename_var.set("Prompt: Brak (wybierz plik)")
 
 
     def select_folder(self):
         """ wybór folderu """
-        folder_path = filedialog.askdirectory(title="Wybierz folder ze skanami")
+        if self.is_transcribing:
+            return
+
+        initial_dir = os.getcwd() # domyślnie obecny katalog
+
+        folder_path = filedialog.askdirectory(
+            title="Wybierz folder ze skanami",
+            initialdir=initial_dir,
+            parent=self.root
+        )
+
         if folder_path:
+            display_path = folder_path
+            if len(display_path) > 40:
+                display_path = "..." + display_path[-37:] # Pokaż ostatnie 37 znaków
+            self.current_folder_var.set(display_path)
+
+            # Załadowanie plików
             self.load_file_list(folder_path)
 
 
@@ -218,13 +252,17 @@ class ManuscriptEditor:
                 })
 
             if not self.file_pairs:
-                messagebox.showinfo("Info", "Brak obrazów w folderze.")
+                messagebox.showinfo("Info", "Brak obrazów w folderze.", parent=self.root)
+                self.original_image = None
+                self.canvas.delete("all")
+                self.text_area.delete(1.0, tk.END)
+                self.file_info_var.set("Brak plików")
                 return
 
             self.current_index = 0
             self.load_pair(0)
         except Exception as e:
-            messagebox.showerror("Błąd", f"Nie można odczytać folderu: {e}")
+            messagebox.showerror("Błąd", f"Nie można odczytać folderu: {e}", parent=self.root)
 
 
     def load_pair(self, index):
@@ -288,7 +326,7 @@ class ManuscriptEditor:
             self.prompt_filename_var.set(f"Prompt: {filename}")
             return True
         except Exception as e:
-            messagebox.showerror("Błąd promptu", f"Nie można wczytać pliku:\n{e}")
+            messagebox.showerror("Błąd promptu", f"Nie można wczytać pliku:\n{e}", parent=self.root)
             return False
 
 
@@ -296,8 +334,13 @@ class ManuscriptEditor:
         """ okno dialogowe wyboru pliku promptu """
         filename = filedialog.askopenfilename(
             title="Wybierz plik z promptem",
-            filetypes=[("Pliki tekstowe", "*.txt"), ("Wszystkie pliki", "*.*")]
+            filetypes=[("Pliki tekstowe", "*.txt"), ("Wszystkie pliki", "*.*")],
+            parent=self.root
         )
+
+        self.root.focus_set()
+        self.root.update_idletasks()
+
         if filename:
             self.load_prompt_content(filename)
 
@@ -352,7 +395,7 @@ class ManuscriptEditor:
                     self.root.after(1000, lambda: self.refresh_label_safely(self.current_index))
 
         except Exception as e:
-            messagebox.showerror("Błąd zapisu", str(e))
+            messagebox.showerror("Błąd zapisu", str(e), parent=self.root)
 
 
     def refresh_label_safely(self, expected_index):
@@ -411,13 +454,14 @@ class ManuscriptEditor:
         self.save_current_text(silent=True)
 
         if not self.file_pairs:
-            messagebox.showwarning("Brak danych", "Brak plików do eksportu.")
+            messagebox.showwarning("Brak danych", "Brak plików do eksportu.", parent=self.root)
             return
 
         target_path = filedialog.asksaveasfilename(
             title="Wybierz miejsce zapisu scalonego pliku TXT",
             defaultextension=".txt",
-            filetypes=[("Plik tekstowy", "*.txt")]
+            filetypes=[("Plik tekstowy", "*.txt")],
+            parent=self.root
         )
 
         if not target_path:
@@ -440,10 +484,10 @@ class ManuscriptEditor:
                 f.write(final_text)
 
             messagebox.showinfo("Sukces",
-                                f"Utworzono plik:\n{os.path.basename(target_path)}")
+                                f"Utworzono plik:\n{os.path.basename(target_path)}", parent=self.root)
 
         except Exception as e:
-            messagebox.showerror("Błąd eksportu", f"Wystąpił błąd podczas zapisu:\n{e}")
+            messagebox.showerror("Błąd eksportu", f"Wystąpił błąd podczas zapisu:\n{e}", parent=self.root)
 
 
     def export_all_data_docx(self):
@@ -455,7 +499,9 @@ class ManuscriptEditor:
         path = filedialog.asksaveasfilename(
             title="Wybierz miejsce zapisu scalonego pliku DOCX",
             defaultextension=".docx",
-            filetypes=[("dokument Word", "*.docx")])
+            filetypes=[("dokument Word", "*.docx")],
+            parent=self.root)
+
 
         if not path:
             return
@@ -488,10 +534,10 @@ class ManuscriptEditor:
             doc.save(path)
 
             messagebox.showinfo("Sukces",
-                                f"Utworzono plik DOCX:\n{os.path.basename(path)}")
+                                f"Utworzono plik DOCX:\n{os.path.basename(path)}", parent=self.root)
 
         except Exception as e:
-            messagebox.showerror("Błąd eksportu", str(e))
+            messagebox.showerror("Błąd eksportu", str(e), parent=self.root)
 
 
     def on_close(self):
@@ -580,11 +626,15 @@ class ManuscriptEditor:
             return
 
         if not self.prompt_text:
-            messagebox.showerror("Błąd konfiguracji", "Brak pliku prompt.txt")
+            messagebox.showerror("Błąd konfiguracji",
+                                 "Brak pliku prompt.txt",
+                                 parent=self.root)
             return
 
         if not self.api_key:
-            messagebox.showerror("Błąd konfiguracji", "Brak klucza GEMINI_API_KEY w pliku .env")
+            messagebox.showerror("Błąd konfiguracji",
+                                 "Brak klucza GEMINI_API_KEY w pliku .env",
+                                 parent=self.root)
             return
 
         # blokada interfejsu
@@ -660,14 +710,18 @@ class ManuscriptEditor:
 
             # automatyczny zapis
             self.save_current_text(silent=False)
-            messagebox.showinfo("Sukces", "Transkrypcja zakończona pomyślnie.")
+            messagebox.showinfo("Sukces",
+                                "Transkrypcja zakończona pomyślnie.",
+                                parent=self.root)
         else:
-            messagebox.showerror("Błąd transkrypcji", f"Wystąpił błąd:\n{content}")
+            messagebox.showerror("Błąd transkrypcji",
+                                 f"Wystąpił błąd:\n{content}",
+                                 parent=self.root)
 
 
 # ----------------------------------- MAIN -------------------------------------
 if __name__ == "__main__":
     # dostępne motywy: "superhero", "journal" (jasny), "darkly", "solar", "minty"
-    app_window = ttk.Window(themename="journal")
+    app_window = ttk.Window(themename="journal", className="ScanTranscript")
     app = ManuscriptEditor(app_window)
     app_window.mainloop()
