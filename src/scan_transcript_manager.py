@@ -1,6 +1,8 @@
 """ przeglądarka skanów i transkrypcji """
 import os
+import json
 import threading
+from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
@@ -13,6 +15,7 @@ from google import genai
 from google.genai import types
 
 
+# ------------------------------- CLASS ----------------------------------------
 class ManuscriptEditor:
     """ główna klasa aplikacji """
     def __init__(self, root):
@@ -26,6 +29,11 @@ class ManuscriptEditor:
         self.current_folder_var = tk.StringVar(value="Nie wybrano katalogu")
 
         self._init_environment()
+
+        self.config_file = "config.json"
+        self.font_family = "Consolas"
+        self.font_size = 12
+        self.load_config()
 
         self.file_pairs = []
         self.current_index = 0
@@ -102,16 +110,30 @@ class ManuscriptEditor:
                                            bootstyle="primary")
         self.editor_frame.pack(fill=BOTH, expand=True, padx=(5,0))
 
+        self.editor_header = ttk.Frame(self.editor_frame)
+        self.editor_header.pack(fill=X, padx=5, pady=5)
+
         # informacja o pliku
         self.file_info_var = tk.StringVar(value="Brak pliku")
-        ttk.Label(self.editor_frame,
+        ttk.Label(self.editor_header,
                   textvariable=self.file_info_var,
                   font=("Segoe UI", 10, "bold"),
-                  bootstyle="inverse-light").pack(fill=X, padx=5, pady=5)
+                  bootstyle="inverse-light").pack(side=LEFT, fill=X, expand=True)
+
+		# przyciski zmiany fontu
+        font_frame = ttk.Frame(self.editor_header)
+        font_frame.pack(side=RIGHT)
+
+        ttk.Button(font_frame, text="A-", command=lambda: self.change_font_size(-1),
+                   bootstyle="outline-secondary", width=3, padding=2).pack(side=LEFT, padx=2)
+        ttk.Button(font_frame, text="A+", command=lambda: self.change_font_size(1),
+                   bootstyle="outline-secondary", width=3, padding=2).pack(side=LEFT, padx=2)
 
         # pole tekstowe z paskiem przewijania
         self.text_scroll = ttk.Scrollbar(self.editor_frame, orient=VERTICAL)
-        self.text_area = tk.Text(self.editor_frame, font=("Consolas", 12), wrap=WORD, undo=True,
+        self.text_area = tk.Text(self.editor_frame,
+                                 font=(self.font_family, self.font_size),
+                                 wrap=WORD, undo=True,
                                  bg="#333333", fg="white", insertbackground="white",
                                  yscrollcommand=self.text_scroll.set, bd=0, width=1)
 
@@ -201,24 +223,87 @@ class ManuscriptEditor:
         self.select_folder()
 
 
+    def load_config(self):
+        """ wczytywanie ustawień z pliku JSON """
+        config_path = Path('..') / 'config' / self.config_file
+        if config_path.exists():
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    self.font_size = config.get("font_size", 12)
+
+                    # optional api key in config file
+                    if not self.api_key:
+                        self.api_key = config.get("api_key", "")
+            except Exception as e:
+                print(f"Błąd wczytywania pliku konfiguracyjnego: {e}")
+
+
+    def save_config(self):
+        """ zapisywanie ustawienia do pliku JSON """
+        config_path = Path('..') / 'config' / self.config_file
+        if config_path.exists():
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                config["font_size"] = self.font_size
+        else:
+            config = {
+                "font_size": self.font_size,
+                "api_key": ""
+            }
+
+        try:
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config, f)
+        except Exception as e:
+            print(f"Błąd zapisu pliku konfiguracyjnego: {e}")
+
+
+    def change_font_size(self, delta):
+        """ zmiana rozmiar fontu edytora i zapis do pliku z configiem """
+        new_size = self.font_size + delta
+        if new_size < 6:
+            new_size = 6
+        if new_size > 72:
+            new_size = 72
+
+        self.font_size = new_size
+        self.text_area.configure(font=(self.font_family, self.font_size))
+
+        self.save_config()
+
+
+    def on_text_zoom(self, event):
+        """ zmiana rozmaru fontu"""
+        delta = 0
+        if event.num == 5 or event.delta < 0:
+            delta = -1
+        elif event.num == 4 or event.delta > 0:
+            delta = 1
+
+        self.change_font_size(delta)
+        return "break"
+
+
     def _init_environment(self):
         """ ładowanie zmiennych środowiskowych i promptu """
         load_dotenv()
 
         self.api_key = os.environ.get("GEMINI_API_KEY")
 
-        prompt_path = "../prompt/prompt_handwritten_pol_xx_century.txt"
+        self.prompt_filename_var.set("Prompt: Brak (wybierz plik)")
+
+        default_prompt = "prompt_handwritten_pol_xx_century.txt"
+        prompt_path = Path('..') / "prompt" / default_prompt
         if os.path.exists(prompt_path):
             try:
                 with open(prompt_path, 'r', encoding='utf-8') as f:
                     self.prompt_text = f.read()
-                filename = os.path.basename(prompt_path)
-                self.prompt_filename_var.set(f"Prompt: {filename}")
+                self.prompt_filename_var.set(f"Prompt: {default_prompt}")
             except Exception as e:
-                messagebox.showerror("Błąd", f"Nie można wczytać {filename}: {e}", parent=self.root)
+                messagebox.showerror("Błąd", f"Nie można wczytać {default_prompt}: {e}", parent=self.root)
         else:
             messagebox.showerror("Przed użyciem Gemini wskaż plik z promptem.", str(e), parent=self.root)
-        self.prompt_filename_var.set("Prompt: Brak (wybierz plik)")
 
 
     def select_folder(self):
@@ -226,7 +311,7 @@ class ManuscriptEditor:
         if self.is_transcribing:
             return
 
-        initial_dir = os.getcwd() # domyślnie obecny katalog
+        initial_dir = os.getcwd() # domyślnie bieżący katalog
 
         folder_path = filedialog.askdirectory(
             title="Wybierz folder ze skanami",
@@ -261,7 +346,7 @@ class ManuscriptEditor:
                 })
 
             if not self.file_pairs:
-                messagebox.showinfo("Info", "Brak obrazów w folderze.", parent=self.root)
+                messagebox.showinfo("Info", "Brak skanów w folderze.", parent=self.root)
                 self.original_image = None
                 self.canvas.delete("all")
                 self.text_area.delete(1.0, tk.END)
@@ -341,8 +426,10 @@ class ManuscriptEditor:
 
     def select_prompt_file(self):
         """ okno dialogowe wyboru pliku promptu """
+        prompt_path = Path('..') / 'prompt'
         filename = filedialog.askopenfilename(
             title="Wybierz plik z promptem",
+            initialdir=prompt_path,
             filetypes=[("Pliki tekstowe", "*.txt"), ("Wszystkie pliki", "*.*")],
             parent=self.root
         )
@@ -725,7 +812,7 @@ class ManuscriptEditor:
 
 
     def _batch_worker(self, selected_indices, window, btn_start):
-        """ Wątek przetwarzający listę plików """
+        """ wątek przetwarzający listę plików """
         total = len(selected_indices)
         errors = 0
 
@@ -825,7 +912,7 @@ class ManuscriptEditor:
 
         if not self.api_key:
             messagebox.showerror("Błąd konfiguracji",
-                                 "Brak klucza GEMINI_API_KEY w pliku .env",
+                                 "Brak klucza GEMINI_API_KEY w pliku .env lub w config.json",
                                  parent=self.root)
             return
 

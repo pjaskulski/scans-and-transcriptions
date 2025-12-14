@@ -1,8 +1,8 @@
 # scans_transcripts
 
-A simple scan and transcription viewer with the option of reading scans using the Gemini Pro 3 model (using this model via API is subject to a fee) and the ability to manually correct transcriptions. The application has the ability to prepare transcriptions for a series of files, but in addition, a script (to be run from the console) for reading the entire series of scans by the Gemini Pro 3 model has also been prepared. The Gemini API key should be saved in the .env file as the GEMINI_API_KEY environment variable.
+A simple scan and transcription viewer with the option of reading scans using the Gemini Pro 3 model (using this model via API is subject to a fee) and the ability to manually correct transcriptions. The application has the ability to prepare transcriptions for a series of files, but in addition, a script (to be run from the console) for reading the entire series of scans by the Gemini Pro 3 model has also been prepared. The Gemini API key should be stored in the `.env` file as the `GEMINI_API_KEY` environment variable (or in the `config/config.json` file under the `api_key` field).
 
-## Screenshots:
+## Screenshots and description:
 
 Application window with a visible enlargement of the fragment (magnifying glass):
 
@@ -18,7 +18,7 @@ Above the text field in the right panel of the application, there's a bar with t
 
 ![Screen](/doc/images_folder.png)
 
-Below there is a bar with information about the current (displayed) scan file: its name and sequence number in the series, and the number of all scans in the folder.
+Below there is a bar with information about the current (displayed) scan file: its name and sequence number in the series, and the number of all scans in the folder. On the right side there are 'A+' and 'A-' buttons that can be used to adjust the font size in the text field.
 
 ![Screen](/doc/image_info.png)
 
