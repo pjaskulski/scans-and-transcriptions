@@ -56,5 +56,6 @@ In some scans, manual reading of text can be facilitated by image filters, the f
 
 ![Screen](/doc/screen_scan_transcript_filtr.png)
 
+The Gemini model was involved in the application programming :-)
 
 Project carried out at the Digital History Lab of the Institute of History of the Polish Academy of Sciences [https://ai.ihpan.edu.pl](https://ai.ihpan.edu.pl).
