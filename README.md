@@ -55,3 +55,6 @@ The file batch reading window displays all scan files in the directory. You can 
 In some scans, manual reading of text can be facilitated by image filters, the following filters are available: negative and contrast (the screenshot below shows the negative filter used).
 
 ![Screen](/doc/screen_scan_transcript_filtr.png)
+
+
+Project carried out at the Digital History Lab of the Institute of History of the Polish Academy of Sciences [https://ai.ihpan.edu.pl](https://ai.ihpan.edu.pl).
