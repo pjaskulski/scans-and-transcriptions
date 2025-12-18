@@ -18,7 +18,7 @@ Above the text field in the right panel of the application, there's a bar with t
 
 ![Screen](/doc/images_folder.png)
 
-Below there is a bar with information about the current (displayed) scan file: its name and sequence number in the series, and the number of all scans in the folder. On the right side there are 'A+' and 'A-' buttons that can be used to adjust the font size in the text field.
+Below there is a bar with information about the current (displayed) scan file: its name and sequence number in the series, and the number of all scans in the folder. On the right side there are 'A+' and 'A-' buttons that can be used to adjust the font size in the text field. In the center are buttons for reading the transcript aloud: READ starts reading, and STOP stops it. A combo box allows you to select the language. The read aloud function uses the gTTS library and requires internet access, so there may be a short wait before it begins.
 
 ![Screen](/doc/image_info.png)
 

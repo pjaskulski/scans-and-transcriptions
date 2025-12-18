@@ -2,6 +2,7 @@
 import os
 import json
 import threading
+import tempfile
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -13,6 +14,8 @@ from docx import Document
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
+from gtts import gTTS
+from just_playback import Playback
 
 
 # ------------------------------- CLASS ----------------------------------------
@@ -33,6 +36,20 @@ class ManuscriptEditor:
         self.config_file = "config.json"
         self.font_family = "Consolas"
         self.font_size = 12
+
+        # języki TTS
+        self.tts_languages = {
+            "Polski": "pl",
+            "Łacina": "la",
+            "Angielski": "en",
+            "Niemiecki": "de",
+            "Francuski": "fr",
+            "Hiszpański": "es",
+            "Portugalski": "pt",
+            "Rosyjski": "ru"
+        }
+        self.current_tts_lang_code = "pl" # domyślny
+
         self.load_config()
 
         self.file_pairs = []
@@ -50,6 +67,10 @@ class ManuscriptEditor:
 
         self.is_transcribing = False
         self.btn_ai = None
+
+        self.playback = Playback()
+
+        self.is_reading_audio = False
 
         self.batch_log_label = None
         self.batch_vars = None
@@ -143,13 +164,34 @@ class ManuscriptEditor:
                   font=("Segoe UI", 10, "bold"),
                   bootstyle="inverse-light").pack(side=LEFT, fill=X, expand=True)
 
-		# przyciski zmiany fontu
-        font_frame = ttk.Frame(self.editor_header)
-        font_frame.pack(side=RIGHT)
+        # Kontener na przyciski narzędziowe edytora
+        editor_tools = ttk.Frame(self.editor_header)
+        editor_tools.pack(side=RIGHT)
 
-        ttk.Button(font_frame, text="A-", command=lambda: self.change_font_size(-1),
+        # wybór języka (Combobox)
+        self.lang_combobox = ttk.Combobox(editor_tools, values=list(self.tts_languages.keys()), state="readonly", width=10, bootstyle="info")
+        # ustawienie wartości początkowej na podstawie kodu (np. 'pl' -> 'Polski')
+        initial_lang_name = [k for k, v in self.tts_languages.items() if v == self.current_tts_lang_code]
+        if initial_lang_name:
+            self.lang_combobox.set(initial_lang_name[0])
+        else:
+            self.lang_combobox.set("Polski")
+
+        self.lang_combobox.bind("<<ComboboxSelected>>", self.change_tts_language)
+        self.lang_combobox.pack(side=LEFT, padx=2)
+
+        self.btn_speak = ttk.Button(editor_tools, text="Czytaj", command=self.read_text_aloud, bootstyle="info-outline", padding=2)
+        self.btn_speak.pack(side=LEFT, padx=2)
+
+        self.btn_stop = ttk.Button(editor_tools, text="Stop", command=self.stop_reading, bootstyle="secondary-outline", padding=2, state="disabled")
+        self.btn_stop.pack(side=LEFT, padx=2)
+
+        ttk.Separator(editor_tools, orient=VERTICAL).pack(side=LEFT, padx=5, fill=Y)
+
+        # Sekcja Fontu
+        ttk.Button(editor_tools, text="A-", command=lambda: self.change_font_size(-1),
                    bootstyle="outline-secondary", width=3, padding=2).pack(side=LEFT, padx=2)
-        ttk.Button(font_frame, text="A+", command=lambda: self.change_font_size(1),
+        ttk.Button(editor_tools, text="A+", command=lambda: self.change_font_size(1),
                    bootstyle="outline-secondary", width=3, padding=2).pack(side=LEFT, padx=2)
 
         # pole tekstowe z paskiem przewijania
@@ -246,6 +288,92 @@ class ManuscriptEditor:
         self.select_folder()
 
 
+    def change_tts_language(self, event):
+        """ Zmienia język TTS na podstawie wyboru z listy """
+        selected_name = self.lang_combobox.get()
+        if selected_name in self.tts_languages:
+            self.current_tts_lang_code = self.tts_languages[selected_name]
+            self.save_config()
+
+
+    def read_text_aloud(self):
+        """ przygotowanie tekstu i uruchamienie wątku TTS """
+        # jeżeli zaznaczenie
+        try:
+            text_to_read = self.text_area.get(tk.SEL_FIRST, tk.SEL_LAST).strip()
+        except tk.TclError:
+            # brak zaznaczenia - czyli czytanie całej transkrypcji
+            text_to_read = self.text_area.get(1.0, tk.END).strip()
+
+        if not text_to_read:
+            return
+
+        if self.is_reading_audio:
+            self.stop_reading()
+
+        self.is_reading_audio = True
+        self.btn_speak.config(state="disabled", text="Ładowanie...")
+        self.btn_stop.config(state="normal")
+
+        # uruchomienie w wątku, aby nie zamrozić GUI podczas pobierania audio z Google
+        threading.Thread(target=self._tts_worker, args=(text_to_read,), daemon=True).start()
+
+
+    def _tts_worker(self, text):
+        """ kod wykonywany w wątku - tworzenie audio przez gTTS i odtwarzanie """
+        try:
+            # generowanie pliku tymczasowego
+            temp_dir = tempfile.gettempdir()
+            temp_path = os.path.join(temp_dir, "manuscript_tts_temp.mp3")
+
+            # połączenie z Google TTS
+            tts = gTTS(text=text, lang='pl')
+            tts.save(temp_path)
+
+            # odtwarzanie
+            if self.is_reading_audio: # czy nie anulowano w międzyczasie
+
+                self.playback.load_file(temp_path)
+                self.playback.play()
+
+                # aktualizacja GUI po starcie odtwarzania
+                self.root.after(0, lambda: self.btn_speak.config(text="Czytanie..."))
+
+                # uruchomienie monitorowania stanu odtwarzania
+                self.root.after(100, self._check_audio_status)
+
+                # sprawdzanie czy koniec odtwarzania (opcjonalne, tutaj uproszczone)
+                # self._check_playback_end()
+
+        except Exception as e:
+            print(f"Błąd TTS: {e}")
+            self.root.after(0, lambda: messagebox.showerror("Błąd TTS", f"Nie można odtworzyć dźwięku. Sprawdź połączenie z internetem. Szczegóły: {e}", parent=self.root))
+            self.root.after(0, self.stop_reading)
+
+
+    def _check_audio_status(self):
+        """ sprawdzanie co 100ms czy trwa odtwarzanie, jeśli nie - reset przycisków """
+        if not self.is_reading_audio:
+            return # jeśli zatrzymano ręcznie, nie sprawdzaj dalej
+
+        if self.playback.active: # sprawdza czy trwa odtwarzanie
+            self.root.after(100, self._check_audio_status)
+        else:
+            self.stop_reading()
+
+
+    def stop_reading(self):
+        """ zatrzyywanie odtwarzania """
+        try:
+            self.playback.stop()
+        except Exception as e:
+            print(e)
+
+        self.is_reading_audio = False
+        self.btn_speak.config(state="normal", text="Czytaj")
+        self.btn_stop.config(state="disabled")
+
+
     def apply_filter(self, mode):
         """ zastosuj filtr dla bieżącego skanu """
         if not self.original_image: return
@@ -272,6 +400,7 @@ class ManuscriptEditor:
                 with open(config_path, 'r', encoding='utf-8') as f:
                     config = json.load(f)
                     self.font_size = config.get("font_size", 12)
+                    self.current_tts_lang_code = config.get("tts_lang", "pl") # wczytanie języka
 
                     # optional api key in config file
                     if not self.api_key:
@@ -290,6 +419,7 @@ class ManuscriptEditor:
         else:
             config = {
                 "font_size": self.font_size,
+                "tts_lang": self.current_tts_lang_code,
                 "api_key": ""
             }
 
@@ -979,13 +1109,88 @@ class ManuscriptEditor:
         thread.start()
 
 
+    # def _single_worker(self, image_path):
+    #     """ wątek dla pojedynczego pliku """
+    #     try:
+    #         result_text = self._call_gemini_api(image_path)
+    #         self.root.after(0, self._single_finished, True, result_text)
+    #     except Exception as e:
+    #         self.root.after(0, self._single_finished, False, str(e))
+
+
+    # def _single_finished(self, success, content):
+    #     """ aktualizacja GUI po zakończeniu pracy wątku """
+    #     self.progress_bar.stop()
+    #     self.progress_bar.pack_forget()
+    #     self.is_transcribing = False
+    #     self.btn_ai.config(state="normal", text="Gemini")
+    #     self.text_area.config(state="normal")
+
+    #     if success:
+    #         self.text_area.delete(1.0, tk.END)
+    #         self.text_area.insert(tk.END, content)
+    #         self.save_current_text(False)
+    #         messagebox.showinfo("Sukces",
+    #                             "Transkrypcja zakończona pomyślnie.",
+    #                             parent=self.root)
+    #         self.root.focus_set()
+    #     else:
+    #         messagebox.showerror("Błąd transkrypcji",
+    #                              f"Info:\n{content}",
+    #                              parent=self.root)
+    #         self.root.focus_set()
+
+
     def _single_worker(self, image_path):
-        """ wątek dla pojedynczego pliku """
+        """ wątek dla pojedynczego pliku z obsługą strumieniowania """
         try:
-            result_text = self._call_gemini_api(image_path)
-            self.root.after(0, self._single_finished, True, result_text)
+            client = genai.Client(api_key=self.api_key)
+
+            with open(image_path, 'rb') as f:
+                image_bytes = f.read()
+
+            model_name = "gemini-3-pro-preview"
+
+            contents = [
+                types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_text(text=self.prompt_text),
+                        types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg')
+                    ]
+                )
+            ]
+
+            generate_content_config = types.GenerateContentConfig(
+                temperature=0,
+                thinkingConfig=types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW),
+                media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH
+            )
+
+            # czyszczenie pola tekstowego przed startem strumienia (w wątku głównym)
+            self.root.after(0, lambda: self.text_area.delete(1.0, tk.END))
+
+            # iteracja po strumieniu odpowiedzi
+            for response in client.models.generate_content_stream(
+                model=model_name,
+                contents=contents,
+                config=generate_content_config
+            ):
+                if response.text:
+                    # Przekazanie fragmentu tekstu do aktualizacji UI
+                    self.root.after(0, self._append_stream_text, response.text)
+
+            self.root.after(0, self._single_finished, True, "")
         except Exception as e:
             self.root.after(0, self._single_finished, False, str(e))
+
+
+    def _append_stream_text(self, text):
+        """ dodawanie fragmentu tekstu do edytora w czasie rzeczywistym """
+        self.text_area.config(state="normal")
+        self.text_area.insert(tk.END, text)
+        self.text_area.see(tk.END)
+        self.text_area.config(state="disabled") # blokada powraca na czas trwania procesu
 
 
     def _single_finished(self, success, content):
@@ -997,9 +1202,8 @@ class ManuscriptEditor:
         self.text_area.config(state="normal")
 
         if success:
-            self.text_area.delete(1.0, tk.END)
-            self.text_area.insert(tk.END, content)
-            self.save_current_text(False)
+            # zapisywanie finalnej wersji po zakończeniu strumieniowania
+            self.save_current_text(True)
             messagebox.showinfo("Sukces",
                                 "Transkrypcja zakończona pomyślnie.",
                                 parent=self.root)

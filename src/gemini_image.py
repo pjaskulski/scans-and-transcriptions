@@ -12,7 +12,7 @@ env_path = Path(".") / ".env"
 load_dotenv(dotenv_path=env_path)
 
 # prompt z pliku tekstowego
-with open('prompt.txt', 'r', encoding='utf-8') as f:
+with open('../prompt/prompt_handwritten_pol_xx_century.txt', 'r', encoding='utf-8') as f:
     prompt = f.read()
 
 
@@ -62,7 +62,7 @@ def generate(image_path):
 if __name__ == "__main__":
 
     # ścieżka do katalogu ze skanami
-    dir_path = Path('..') / 'nazwa_folderu'
+    dir_path = Path('..') / 'test'
 
     for file_path in dir_path.glob('*.jpg'):
         txt_path = file_path.with_suffix('.txt')
