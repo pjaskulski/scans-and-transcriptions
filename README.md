@@ -73,3 +73,26 @@ Project carried out at the Digital History Lab of the Institute of History of th
 
 **Note 2**: A similar but more advanced transcription application (also using Python and TKinter!) is 
 [Transcription Pearl](https://github.com/mhumphries2323/Transcription_Pearl) (Mark Humphries and Lianne C. Leddy, 2024. Transcription Pearl 1.0 Beta. Department of History: Wilfrid Laurier University.) – it allows you to use various models from OpenAI, Google, and Anthropic, import images from PDF files, etc.
+
+
+## Installation
+
+Ensure you have Python installed (version 3.10 or newer is recommended).
+Install the required libraries:
+
+```
+pip install -r requirements.txt
+```
+
+## Configuration 
+
+API key: Create a .env file in the main application directory and add your Gemini key to it: 
+
+```
+GEMINI_API_KEY=your_key_here
+```
+
+**Prompts**: The content of the instructions for the AI model should be located in .txt files in the ../prompt/ subdirectory. 
+
+**Settings**: The application stores preferences (font size, reader language) in the config.json file. You can also save your API key in the ‘api_key’ field in this file. The application first looks for the GEMINI_API_KEY environment variable, and if it is not found, it tries to load the key from the config.json file.
+
