@@ -1,4 +1,4 @@
-# scans_transcripts
+# Scans and Transcriptions
 
 A simple scan and transcription viewer with the option of reading scans using the Gemini Pro 3 model (using this model via API is subject to a fee) and the ability to manually correct transcriptions. The application has the ability to prepare transcriptions for a series of files, but in addition, a script (to be run from the console) for reading the entire series of scans by the Gemini Pro 3 model has also been prepared. The Gemini API key should be stored in the `.env` file as the `GEMINI_API_KEY` environment variable (or in the `config/config.json` file under the `api_key` field).
 
