@@ -65,6 +65,10 @@ Example of a typescript transcription:
 
 ![Screen](/doc/typescript_example.jpg)
 
+Prompt editor:
+
+![Screen](/doc/prompt_editor.jpg)
+
 **Note**: access to the Gemini Pro 3 model via API is subject to a fee, as per the Google pricing page.
 
 In some scans, manual reading of text can be facilitated by image filters, the following filters are available: negative and contrast (the screenshot below shows the negative filter used).
