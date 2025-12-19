@@ -170,6 +170,7 @@ class ManuscriptEditor:
 
         # wybór języka (Combobox)
         self.lang_combobox = ttk.Combobox(editor_tools, values=list(self.tts_languages.keys()), state="readonly", width=10, bootstyle="info")
+
         # ustawienie wartości początkowej na podstawie kodu (np. 'pl' -> 'Polski')
         initial_lang_name = [k for k, v in self.tts_languages.items() if v == self.current_tts_lang_code]
         if initial_lang_name:
@@ -180,10 +181,25 @@ class ManuscriptEditor:
         self.lang_combobox.bind("<<ComboboxSelected>>", self.change_tts_language)
         self.lang_combobox.pack(side=LEFT, padx=2)
 
-        self.btn_speak = ttk.Button(editor_tools, text="Czytaj", command=self.read_text_aloud, bootstyle="info-outline", padding=2)
+        # self.btn_speak = ttk.Button(editor_tools, text="Czytaj", command=self.read_text_aloud, bootstyle="info-outline", padding=2)
+        # self.btn_speak.pack(side=LEFT, padx=2)
+
+        # self.btn_stop = ttk.Button(editor_tools, text="Stop", command=self.stop_reading, bootstyle="secondary-outline", padding=2, state="disabled")
+        # self.btn_stop.pack(side=LEFT, padx=2)
+
+        # przycisk startu
+        self.btn_speak = ttk.Button(editor_tools, text="▶", command=self.read_text_aloud,
+                                    bootstyle="info-outline", width=3, padding=2)
         self.btn_speak.pack(side=LEFT, padx=2)
 
-        self.btn_stop = ttk.Button(editor_tools, text="Stop", command=self.stop_reading, bootstyle="secondary-outline", padding=2, state="disabled")
+        # przycisk pauzy - domyślnie wyłączony
+        self.btn_pause = ttk.Button(editor_tools, text="||", command=self.pause_reading,
+                                    bootstyle="info-outline", width=3, padding=2, state="disabled")
+        self.btn_pause.pack(side=LEFT, padx=2)
+
+        # przycisk stopu
+        self.btn_stop = ttk.Button(editor_tools, text="■", command=self.stop_reading,
+                                   bootstyle="info-outline", width=3, padding=2, state="disabled")
         self.btn_stop.pack(side=LEFT, padx=2)
 
         ttk.Separator(editor_tools, orient=VERTICAL).pack(side=LEFT, padx=5, fill=Y)
@@ -289,20 +305,28 @@ class ManuscriptEditor:
 
 
     def change_tts_language(self, event):
-        """ Zmienia język TTS na podstawie wyboru z listy """
+        """ zmienia język TTS na podstawie wyboru z listy """
         selected_name = self.lang_combobox.get()
         if selected_name in self.tts_languages:
             self.current_tts_lang_code = self.tts_languages[selected_name]
             self.save_config()
 
 
+    def pause_reading(self):
+        """ obsługa wstrzymywania i wznawiania odtwarzania """
+        if self.playback.active:
+            if self.playback.paused:
+                self.playback.resume()
+                self.btn_pause.config(text="||")
+            else:
+                self.playback.pause()
+                self.btn_pause.config(text=">")
+
     def read_text_aloud(self):
         """ przygotowanie tekstu i uruchamienie wątku TTS """
-        # jeżeli zaznaczenie
         try:
             text_to_read = self.text_area.get(tk.SEL_FIRST, tk.SEL_LAST).strip()
         except tk.TclError:
-            # brak zaznaczenia - czyli czytanie całej transkrypcji
             text_to_read = self.text_area.get(1.0, tk.END).strip()
 
         if not text_to_read:
@@ -312,65 +336,57 @@ class ManuscriptEditor:
             self.stop_reading()
 
         self.is_reading_audio = True
-        self.btn_speak.config(state="disabled", text="Ładowanie...")
+        self.btn_speak.config(state="disabled")
+        self.btn_pause.config(state="disabled", text="||")
         self.btn_stop.config(state="normal")
 
-        # uruchomienie w wątku, aby nie zamrozić GUI podczas pobierania audio z Google
         threading.Thread(target=self._tts_worker, args=(text_to_read,), daemon=True).start()
 
 
     def _tts_worker(self, text):
-        """ kod wykonywany w wątku - tworzenie audio przez gTTS i odtwarzanie """
+        """ kod wykonywany w wątku - tworzenie audio i start odtwarzania """
         try:
-            # generowanie pliku tymczasowego
+            lang_to_use = self.current_tts_lang_code
+
             temp_dir = tempfile.gettempdir()
             temp_path = os.path.join(temp_dir, "manuscript_tts_temp.mp3")
 
-            # połączenie z Google TTS
-            tts = gTTS(text=text, lang='pl')
+            tts = gTTS(text=text, lang=lang_to_use)
             tts.save(temp_path)
 
-            # odtwarzanie
-            if self.is_reading_audio: # czy nie anulowano w międzyczasie
-
+            if self.is_reading_audio:
                 self.playback.load_file(temp_path)
                 self.playback.play()
 
-                # aktualizacja GUI po starcie odtwarzania
-                self.root.after(0, lambda: self.btn_speak.config(text="Czytanie..."))
-
-                # uruchomienie monitorowania stanu odtwarzania
+                # odblokowanie pauzy po rozpoczęciu odtwarzania
+                self.root.after(0, lambda: self.btn_pause.config(state="normal"))
                 self.root.after(100, self._check_audio_status)
-
-                # sprawdzanie czy koniec odtwarzania (opcjonalne, tutaj uproszczone)
-                # self._check_playback_end()
 
         except Exception as e:
             print(f"Błąd TTS: {e}")
-            self.root.after(0, lambda: messagebox.showerror("Błąd TTS", f"Nie można odtworzyć dźwięku. Sprawdź połączenie z internetem. Szczegóły: {e}", parent=self.root))
             self.root.after(0, self.stop_reading)
 
 
     def _check_audio_status(self):
-        """ sprawdzanie co 100ms czy trwa odtwarzanie, jeśli nie - reset przycisków """
+        """ sprawdzanie stanu odtwarzania """
         if not self.is_reading_audio:
-            return # jeśli zatrzymano ręcznie, nie sprawdzaj dalej
+            return
 
-        if self.playback.active: # sprawdza czy trwa odtwarzanie
+        if self.playback.active:
             self.root.after(100, self._check_audio_status)
         else:
             self.stop_reading()
 
-
     def stop_reading(self):
-        """ zatrzyywanie odtwarzania """
+        """ pełne zatrzymanie i reset interfejsu """
         try:
             self.playback.stop()
         except Exception as e:
             print(e)
 
         self.is_reading_audio = False
-        self.btn_speak.config(state="normal", text="Czytaj")
+        self.btn_speak.config(state="normal")
+        self.btn_pause.config(state="disabled", text="||")
         self.btn_stop.config(state="disabled")
 
 
