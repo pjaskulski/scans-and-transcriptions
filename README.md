@@ -1,6 +1,8 @@
 # Scans and Transcriptions
 
-A simple scan and transcription viewer with the option of reading scans using the Gemini Pro 3 model (using this model via API is subject to a fee) and the ability to manually correct transcriptions. The application has the ability to prepare transcriptions for a series of files, but in addition, a script (to be run from the console) for reading the entire series of scans by the Gemini Pro 3 model has also been prepared. The Gemini API key should be stored in the `.env` file as the `GEMINI_API_KEY` environment variable (or in the `config/config.json` file under the `api_key` field).
+Do you have a collection of scanned manuscripts or typescripts? Do you need a transcription? This simple desktop application makes using Gemini for this purpose easy. Once the transcriptions are complete, you can review, verify and correct them.
+
+The 'Scans and Transcriptions' viewer offers the option of reading scans using the Gemini Pro 3 model (please note that using this model via API is subject to a fee!) and the ability to manually correct transcriptions. The application can prepare transcriptions for a single image or a series of files. The Gemini API key should be stored in the `.env` file as the `GEMINI_API_KEY` environment variable (or in the `config/config.json` file under the `api_key` field).
 
 Application Features:
   - Viewing scans and transcripts. The application assumes that the specified directory contains scan files and transcript files with identical names but with the *.txt extension. If a text file is missing, the application will automatically create an empty one.
@@ -105,7 +107,7 @@ API key: Create a .env file in the main application directory and add your Gemin
 GEMINI_API_KEY=your_key_here
 ```
 
-**Prompts**: The content of the instructions for the AI model should be located in .txt files in the ../prompt/ subdirectory. 
+**Prompts**: The content of the instructions for the AI model (prompts) should be located in .txt files in the ../prompt/ subdirectory. This directory already contains sample prompts.
 
-**Settings**: The application stores preferences (font size, reader language) in the config.json file. You can also save your API key in the ‘api_key’ field in this file. The application first looks for the GEMINI_API_KEY environment variable, and if it is not found, it tries to load the key from the config.json file.
+**Settings**: The application stores preferences (font size, TTS reader language) in the config.json file. You can also save your API key in the ‘api_key’ field in this file. The application first looks for the GEMINI_API_KEY environment variable, and if it is not found, it tries to load the key from the config.json file.
 
