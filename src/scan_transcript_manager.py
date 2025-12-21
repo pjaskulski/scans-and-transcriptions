@@ -1,5 +1,6 @@
 """ przeglądarka skanów i transkrypcji """
 import os
+import re
 import json
 import threading
 import tempfile
@@ -76,6 +77,8 @@ class ManuscriptEditor:
         self.batch_log_label = None
         self.batch_vars = None
         self.batch_progress = None
+
+        self.last_entities = [] # zapamiętana lista nazw własnych dla bieżącej strony
 
         # główny kontener
         self.paned = ttk.Panedwindow(root, orient=HORIZONTAL)
@@ -165,7 +168,7 @@ class ManuscriptEditor:
                   font=("Segoe UI", 10, "bold"),
                   bootstyle="inverse-light").pack(side=LEFT, fill=X, expand=True)
 
-        # Kontener na przyciski narzędziowe edytora
+        # kontener na przyciski narzędziowe edytora
         editor_tools = ttk.Frame(self.editor_header)
         editor_tools.pack(side=RIGHT)
 
@@ -173,6 +176,11 @@ class ManuscriptEditor:
         self.btn_ner = ttk.Button(editor_tools, text="NER", command=self.start_ner_analysis,
                                   bootstyle="success-outline", width=3, padding=2)
         self.btn_ner.pack(side=LEFT, padx=(3,3))
+
+        # przycisk BOX (lokalizacja nazw na skanie) - domyślnie wyłączony
+        self.btn_box = ttk.Button(editor_tools, text="BOX", command=self.start_grounding_analysis,
+                          bootstyle="success-outline", width=4, padding=2, state="disabled")
+        self.btn_box.pack(side=LEFT, padx=(3,3))
 
         # wybór języka (Combobox)
         self.lang_combobox = ttk.Combobox(editor_tools, values=list(self.tts_languages.keys()), state="readonly", width=10, bootstyle="info")
@@ -320,13 +328,30 @@ class ManuscriptEditor:
         self.select_folder()
 
 
+    def _parse_grounding_response(self, text):
+        """ wyodrębnia nazwy i współrzędne [y1, x1, y2, x2] z odpowiedzi modelu """
+        results = []
+        # Szukamy wzorca: [nazwa] [ymin, xmin, ymax, xmax]
+        pattern = r"(.*?)\s*\[(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\]"
+        matches = re.findall(pattern, text)
+
+        for m in matches:
+            results.append({
+                'name': m[0],
+                'coords': [int(x) for x in m[1:]] # konwersja na integer
+            })
+        return results
+
+
     def _on_text_modified(self, event):
         """
-        automatyczne usuwanie podświetlenia nazw własnych przy edycji tekstu
+        automatyczne usuwanie podświetlenia nazw własnych i ramek ze skanu
+        przy edycji tekstu
         """
-        # usuwanie tagów tylko jeśli faktycznie istnieją w edytorze
         if self.text_area.tag_ranges("entity_highlight"):
             self.text_area.tag_remove("entity_highlight", "1.0", tk.END)
+        self.canvas.delete("ner_box") # usuwanie ramek z obrazu
+
 
     def start_ner_analysis(self):
         """
@@ -343,12 +368,17 @@ class ManuscriptEditor:
         thread = threading.Thread(target=self._ner_worker, args=(text,), daemon=True)
         thread.start()
 
+
     def _ner_worker(self, text):
         """
         dodatkowa analiza tekstu przez Gemini w celu uzyskania listy nazw własnych
         """
         try:
             client = genai.Client(api_key=self.api_key)
+
+            current_pair = self.file_pairs[self.current_index]
+            with open(current_pair['img'], 'rb') as f:
+                image_bytes = f.read()
 
             prompt = (
                 "Z poniższego tekstu wypisz wyłącznie nazwy własne (osoby, miejscowości, instytucje). "
@@ -362,37 +392,114 @@ class ManuscriptEditor:
             )
 
             response = client.models.generate_content(
-                model="gemini-flash-latest", # gemini-flash-lite-latest lub gemini-flash-latest
+                # gemini-flash-lite-latest, gemini-flash-latest, gemini-3-pro-preview, gemini-3-flash-preview
+                model="gemini-flash-latest",
                 contents=prompt,
                 config=config
             )
 
             if response.text:
                 # przekształcenie odpowiedzi na listę unikalnych fraz
-                entities = [e.strip() for e in response.text.split(",") if len(e.strip()) > 2]
-                self.root.after(0, self._apply_ner_highlights, entities)
+                self.last_entities= [e.strip() for e in response.text.split(",") if len(e.strip()) > 2]
+                self.root.after(0, self._apply_ner_txt_only)
 
         except Exception as e:
-            print(f"Błąd NER: {e}")
+            print(f"Błąd analizy NER: {e}")
         finally:
             self.root.after(0, lambda: self.btn_ner.config(state="normal"))
 
-    def _apply_ner_highlights(self, entities):
-        """
-        podświetlenie nazw własnych w tekście w edytorze
-        """
-        for entity in entities:
+
+    def _apply_ner_txt_only(self):
+        """ podświetlenie nazw własnych w tekście w edytorze """
+        for name in self.last_entities:
             start_pos = "1.0"
             while True:
-                # wyszukiwanie frazy bez względu na wielkość liter
-                start_pos = self.text_area.search(entity, start_pos, stopindex=tk.END, nocase=True)
+                start_pos = self.text_area.search(name, start_pos, stopindex=tk.END, nocase=True)
                 if not start_pos:
                     break
-
-                # obliczanie zakresu i nakładanie tagu
-                end_pos = f"{start_pos}+{len(entity)}c"
+                end_pos = f"{start_pos}+{len(name)}c"
                 self.text_area.tag_add("entity_highlight", start_pos, end_pos)
                 start_pos = end_pos
+
+        if self.last_entities:
+            self.btn_box.config(state="normal") # odblokowanie rysowania ramek na skanie
+
+
+    def start_grounding_analysis(self):
+        """ uruchamianie rysowania lokalizacji nazw na obrazie """
+        if not self.last_entities or not self.original_image:
+            return
+
+        self.btn_box.config(state="disabled", text="..." )
+        threading.Thread(target=self._box_worker, daemon=True).start()
+
+
+    def _box_worker(self):
+        try:
+            client = genai.Client(api_key=self.api_key)
+            current_pair = self.file_pairs[self.current_index]
+            with open(current_pair['img'], 'rb') as f:
+                image_bytes = f.read()
+
+            entities_str = ", ".join(self.last_entities)
+            prompt = (f"Na załączonym obrazie znajdź lokalizację następujących nazw: {entities_str}. "
+                      "Uwzględnij tylko i wyłącznie nazwy z listy, inne zignoruj. "
+                      "Dla każdej nazwy podaj współrzędne ramki w formacie: \n"
+                      "nazwa [ymin, xmin, ymax, xmax]\n"
+                      " Zwróć tylko listę tych danych bez żadnych dodatkowych komentarzy.")
+
+            config = types.GenerateContentConfig(
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
+            )
+
+            response = client.models.generate_content(
+                model="gemini-3-pro-image-preview",
+                contents=[
+                    types.Part.from_text(text=prompt),
+                    types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg')
+                ],
+                config=config
+            )
+
+            if response.text:
+                entities_data = self._parse_grounding_response(response.text)
+                self.root.after(0, self._draw_boxes_only, entities_data)
+
+        except Exception as e:
+            print(f"Błąd BOX: {e}")
+        finally:
+            self.root.after(0, lambda: self.btn_box.config(state="normal", text="BOX"))
+
+
+    def _draw_boxes_only(self, entities_data):
+        """ rysowanie ramki na canvasie """
+        self.canvas.delete("ner_box")
+        orig_w, orig_h = self.original_image.width, self.original_image.height
+
+        for item in entities_data:
+            name = item['name']
+            c = item['coords']
+            x1 = (c[1] * orig_w / 1000) * self.scale + self.img_x
+            y1 = (c[0] * orig_h / 1000) * self.scale + self.img_y
+            x2 = (c[3] * orig_w / 1000) * self.scale + self.img_x
+            y2 = (c[2] * orig_h / 1000) * self.scale + self.img_y
+            self.canvas.create_rectangle(x1, y1, x2, y2, outline="#f90404", width=3, tags="ner_box")
+
+            # etykieta tekstowa nad ramką
+            # tworzenie tekstu, aby pobrać jego wymiary do tła
+            text_id = self.canvas.create_text(x1, y1 - 2, text=name, anchor="sw",
+                                             fill="black", font=("Segoe UI", 9, "bold"),
+                                             tags="ner_box")
+
+            # bounding box stworzonego tekstu
+            bbox = self.canvas.bbox(text_id)
+
+            # rysowanie tła pod tekst
+            rect_id = self.canvas.create_rectangle(bbox, fill="#ffcc00", outline="#ffcc00", tags="ner_box")
+
+            # tekst na prostokącie tła
+            self.canvas.tag_raise(text_id, rect_id)
+
 
     def change_tts_language(self, event):
         """ zmienia język TTS na podstawie wyboru z listy """
@@ -566,7 +673,7 @@ class ManuscriptEditor:
         """ ładowanie zmiennych środowiskowych i promptu """
         load_dotenv()
 
-        self.api_key = os.environ.get("GEMINI_API_KEY")
+        self.api_key = os.environ.get("GEMINI_API_KEY_NANO")
 
         self.prompt_filename_var.set("Brak (wybierz plik)")
 
@@ -643,6 +750,11 @@ class ManuscriptEditor:
         if not self.file_pairs:
             return
         pair = self.file_pairs[index]
+
+        # reset
+        self.last_entities = []
+        self.btn_box.config(state="disabled")
+        self.canvas.delete("ner_box")
 
         # aktualizacja nagłówka
         self.file_info_var.set(f"[{index + 1}/{len(self.file_pairs)}] {pair['name']}")

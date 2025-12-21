@@ -76,6 +76,10 @@ Highlighting of entity names in the transcription text:
 
 ![Screen](/doc/highlighting_entity_names.jpg)
 
+Experimental function of searching for found entity names in the scan - the names are marked with frames and the read text is placed above the frame, which allows for a quick comparison of the text with the actual content of the scan.
+
+![Screen](/doc/entity_names_on_scan.jpg)
+
 **Note**: access to the Gemini Pro 3 model via API is subject to a fee, as per the Google pricing page.
 
 In some scans, manual reading of text can be facilitated by image filters, the following filters are available: negative and contrast (the screenshot below shows the negative filter used).
