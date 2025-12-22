@@ -106,6 +106,12 @@ class ManuscriptEditor:
         self.canvas.bind("<Button-4>", self.on_mouse_wheel)
         self.canvas.bind("<Button-5>", self.on_mouse_wheel)
         self.canvas.bind("<Button-3>", self.show_magnifier)
+        self.canvas.bind("<B3-Motion>", self.update_magnifier)
+        self.canvas.bind("<ButtonRelease-3>", self.hide_magnifier)
+
+        self.magnifier_win = None
+        self.mag_label = None
+        self.tk_mag_img = None
 
         # pasek statusu pod obrazem
         self.image_tools = ttk.Frame(self.left_frame)
@@ -158,33 +164,59 @@ class ManuscriptEditor:
                                            bootstyle="primary")
         self.editor_frame.pack(fill=BOTH, expand=True, padx=(5,0))
 
-        self.editor_header = ttk.Frame(self.editor_frame)
-        self.editor_header.pack(fill=X, padx=5, pady=5)
+        # wiersz 1: nawigacja i wielkość fontu
+        self.header_row1 = ttk.Frame(self.editor_frame)
+        self.header_row1.pack(fill=X, padx=5, pady=2)
 
-        # informacja o pliku
         self.file_info_var = tk.StringVar(value="Brak pliku")
-        ttk.Label(self.editor_header,
-                  textvariable=self.file_info_var,
-                  font=("Segoe UI", 10, "bold"),
-                  bootstyle="inverse-light").pack(side=LEFT, fill=X, expand=True)
+        ttk.Label(self.header_row1, textvariable=self.file_info_var,
+                  font=("Segoe UI", 10, "bold"), bootstyle="inverse-light").pack(side=LEFT, fill=X, expand=True)
 
-        # kontener na przyciski narzędziowe edytora
-        editor_tools = ttk.Frame(self.editor_header)
-        editor_tools.pack(side=RIGHT)
+        # wyszukiwanie w tekście transkrypcji
+        search_frame = ttk.Frame(self.header_row1)
+        search_frame.pack(side=LEFT, padx=20)
 
-        # przycisk NER (podświetlanie nazw własnych)
-        self.btn_ner = ttk.Button(editor_tools, text="NER", command=self.start_ner_analysis,
+        self.search_var = tk.StringVar()
+        self.search_entry = ttk.Entry(search_frame, textvariable=self.search_var,
+                                      width=15, font=("Segoe UI", 9))
+        self.search_entry.pack(side=LEFT, padx=2)
+        self.search_entry.bind("<Return>", lambda e: self.perform_search())
+
+        ttk.Button(search_frame, text="→", command=self.perform_search,
+                   bootstyle="outline-info", padding=0).pack(side=LEFT)
+        ttk.Button(search_frame, text="×", command=self.clear_search,
+                   bootstyle="outline-info", padding=0).pack(side=LEFT)
+
+        # font pola tekstowego z transkrypcją
+        font_tools = ttk.Frame(self.header_row1)
+        font_tools.pack(side=RIGHT)
+        ttk.Button(font_tools, text="A-", command=lambda: self.change_font_size(-1),
+                   bootstyle="outline-secondary", width=3, padding=2).pack(side=LEFT, padx=2)
+        ttk.Button(font_tools, text="A+", command=lambda: self.change_font_size(1),
+                   bootstyle="outline-secondary", width=3, padding=2).pack(side=LEFT, padx=2)
+
+        # wiersz 2: narzędzia AI (NER/BOX) i TTS (lektor)
+        self.header_row2 = ttk.Frame(self.editor_frame)
+        self.header_row2.pack(fill=X, padx=5, pady=2)
+
+        # lewa strona wiersza 2: analiza treści
+        ai_tools = ttk.Frame(self.header_row2)
+        ai_tools.pack(side=LEFT)
+
+        self.btn_ner = ttk.Button(ai_tools, text="NER", command=self.start_ner_analysis,
                                   bootstyle="success-outline", width=3, padding=2)
-        self.btn_ner.pack(side=LEFT, padx=(3,3))
+        self.btn_ner.pack(side=LEFT, padx=2)
 
-        # przycisk BOX (lokalizacja nazw na skanie) - domyślnie wyłączony
-        self.btn_box = ttk.Button(editor_tools, text="BOX", command=self.start_grounding_analysis,
-                          bootstyle="success-outline", width=4, padding=2, state="disabled")
-        self.btn_box.pack(side=LEFT, padx=(3,3))
+        self.btn_box = ttk.Button(ai_tools, text="BOX", command=self.start_grounding_analysis,
+                                  bootstyle="success-outline", width=4, padding=2, state="disabled")
+        self.btn_box.pack(side=LEFT, padx=2)
 
-        # wybór języka (Combobox)
-        self.lang_combobox = ttk.Combobox(editor_tools, values=list(self.tts_languages.keys()), state="readonly", width=10, bootstyle="info")
+        # prawa strona wiersza 2: lektor (TTS)
+        tts_tools = ttk.Frame(self.header_row2)
+        tts_tools.pack(side=RIGHT)
 
+        self.lang_combobox = ttk.Combobox(tts_tools, values=list(self.tts_languages.keys()),
+                                          state="readonly", width=10, bootstyle="info")
         # ustawienie wartości początkowej na podstawie kodu (np. 'pl' -> 'Polski')
         initial_lang_name = [k for k, v in self.tts_languages.items() if v == self.current_tts_lang_code]
         if initial_lang_name:
@@ -195,28 +227,19 @@ class ManuscriptEditor:
         self.lang_combobox.bind("<<ComboboxSelected>>", self.change_tts_language)
         self.lang_combobox.pack(side=LEFT, padx=2)
 
-        # przycisk startu
-        self.btn_speak = ttk.Button(editor_tools, text="▶", command=self.read_text_aloud,
+        self.btn_speak = ttk.Button(tts_tools, text=">", command=self.read_text_aloud,
                                     bootstyle="info-outline", width=3, padding=2)
         self.btn_speak.pack(side=LEFT, padx=2)
 
-        # przycisk pauzy - domyślnie wyłączony
-        self.btn_pause = ttk.Button(editor_tools, text="||", command=self.pause_reading,
-                                    bootstyle="info-outline", width=3, padding=2, state="disabled")
+        self.btn_pause = ttk.Button(tts_tools, text="||", command=self.pause_reading,
+                                    bootstyle="warning-outline", width=3, padding=2, state="disabled")
         self.btn_pause.pack(side=LEFT, padx=2)
 
-        # przycisk stopu
-        self.btn_stop = ttk.Button(editor_tools, text="■", command=self.stop_reading,
-                                   bootstyle="info-outline", width=3, padding=2, state="disabled")
+        self.btn_stop = ttk.Button(tts_tools, text="■", command=self.stop_reading,
+                                   bootstyle="secondary-outline", width=3, padding=2, state="disabled")
         self.btn_stop.pack(side=LEFT, padx=2)
 
-        ttk.Separator(editor_tools, orient=VERTICAL).pack(side=LEFT, padx=5, fill=Y)
-
-        # Sekcja Fontu
-        ttk.Button(editor_tools, text="A-", command=lambda: self.change_font_size(-1),
-                   bootstyle="outline-secondary", width=3, padding=2).pack(side=LEFT, padx=2)
-        ttk.Button(editor_tools, text="A+", command=lambda: self.change_font_size(1),
-                   bootstyle="outline-secondary", width=3, padding=2).pack(side=LEFT, padx=2)
+        ttk.Separator(self.editor_frame, orient=HORIZONTAL).pack(fill=X, padx=5, pady=2)
 
         # pole tekstowe z paskiem przewijania
         self.text_scroll = ttk.Scrollbar(self.editor_frame, orient=VERTICAL)
@@ -232,6 +255,8 @@ class ManuscriptEditor:
 
         # konfiguracja stylu podświetlenia dla NER (żółte tło)
         self.text_area.tag_configure("entity_highlight", background="#ffcc00", foreground="black")
+        # konfiguracja dla wyszukiwania w tekście transkrypcji
+        self.text_area.tag_configure("search_highlight", background="#00ffff", foreground="black")
 
         # powiązanie dowolnego klawisza z usunięciem podświetleń
         #self.text_area.bind("<KeyPress>", self._on_text_modified)
@@ -326,6 +351,45 @@ class ManuscriptEditor:
                                             bootstyle="success-striped")
 
         self.select_folder()
+
+
+    def clear_search(self):
+        """ czyści wyniki wyszukiwania """
+        self.text_area.tag_remove("search_highlight", "1.0", tk.END)
+        self.search_var.set("")
+
+
+    def perform_search(self):
+        """ wyszukuje i podświetla frazę w tekście transkrypcji """
+        self.text_area.tag_remove("search_highlight", "1.0", tk.END)
+
+        query = self.search_var.get().strip()
+        if not query:
+            return
+
+        start_pos = "1.0"
+        count = 0
+        while True:
+            # szukanie frazy (nocase=True dla ignorowania wielkości liter)
+            start_pos = self.text_area.search(query, start_pos, stopindex=tk.END, nocase=True)
+            if not start_pos:
+                break
+
+            # obliczanie końca frazy
+            end_pos = f"{start_pos}+{len(query)}c"
+            self.text_area.tag_add("search_highlight", start_pos, end_pos)
+
+            # przewijanie do pierwszego znalezionego wyniku
+            if count == 0:
+                self.text_area.see(start_pos)
+
+            start_pos = end_pos
+            count += 1
+
+        if count == 0:
+            # mignięcie ramką entry na czerwono przy braku wyników
+            self.search_entry.config(bootstyle="danger")
+            self.root.after(500, lambda: self.search_entry.config(bootstyle="default"))
 
 
     def _parse_grounding_response(self, text):
@@ -1043,74 +1107,142 @@ class ManuscriptEditor:
 
 
     def show_magnifier(self, event):
-        """ wyświetlanie lupę (okno powiększające) w miejscu kursora """
-        src = self.processed_image if self.processed_image else self.original_image
-        if not src:
+        """ utworzenie okna lupy po naciśnięciu prawego przycisku myszy """
+        if not self.original_image:
             return
 
         # ustawienia lupy
-        MAG_WIDTH, MAG_HEIGHT = 750, 300  # rozmiar okna lupy
-        ZOOM_FACTOR = 2.0                 # powiększenie względem oryginału (200%)
+        self.MAG_WIDTH, self.MAG_HEIGHT = 750, 300
+        self.ZOOM_FACTOR = 2.0
 
-        # współrzędne kliknięcia względem oryginalnego obrazu
-        # event.x/y -  współrzędne na canvas
-        # self.img_x/y -  przesunięcie obrazu (panning)
-        # self.scale - aktualny zoom głównego widoku
+        # tworzenie okna
+        self.magnifier_win = tk.Toplevel(self.root)
+        self.magnifier_win.overrideredirect(True) # Usunięcie ramek
+        self.magnifier_win.attributes("-topmost", True) # Zawsze na wierzchu
 
-        # pozycja pixela oryginału
+        # tworzenie etykiety na obraz
+        frame = ttk.Frame(self.magnifier_win, bootstyle="info", padding=2)
+        frame.pack(fill=BOTH, expand=True)
+        self.mag_label = ttk.Label(frame, background="white")
+        self.mag_label.pack(fill=BOTH, expand=True)
+
+        # pierwsza aktualizacja pozycji i zawartości
+        self.update_magnifier(event)
+
+
+    def update_magnifier(self, event):
+        """ aktualizacja pozycji okna i wycinany fragment obrazu podczas ruchu myszy """
+        if not self.magnifier_win or not self.original_image:
+            return
+
+        src = self.processed_image if self.processed_image else self.original_image
+
+        # pozycjonowanie okna względem kursora systemowego
+        pos_x = int(event.x_root - (self.MAG_WIDTH / 2))
+        pos_y = int(event.y_root - (self.MAG_HEIGHT / 2))
+        self.magnifier_win.geometry(f"{self.MAG_WIDTH}x{self.MAG_HEIGHT}+{pos_x}+{pos_y}")
+
+        # obliczanie fragmentu do wycięcia z oryginału
+        # przeliczanie współrzędnych canvasu na współrzędne oryginalnego obrazu
         orig_x = (event.x - self.img_x) / self.scale
         orig_y = (event.y - self.img_y) / self.scale
 
-        # obszar do wycięcia z oryginału
-        crop_w = MAG_WIDTH / ZOOM_FACTOR
-        crop_h = MAG_HEIGHT / ZOOM_FACTOR
+        crop_w = self.MAG_WIDTH / self.ZOOM_FACTOR
+        crop_h = self.MAG_HEIGHT / self.ZOOM_FACTOR
 
-        x1 = orig_x - (crop_w / 2)
-        y1 = orig_y - (crop_h / 2)
-        x2 = x1 + crop_w
-        y2 = y1 + crop_h
+        x1, y1 = orig_x - (crop_w / 2), orig_y - (crop_h / 2)
+        x2, y2 = x1 + crop_w, y1 + crop_h
 
         try:
-            # wycięcie i przeskalowanie
+            # wycięcie i skalowanie
             region = src.crop((x1, y1, x2, y2))
+            magnified_img = region.resize((self.MAG_WIDTH, self.MAG_HEIGHT), Image.Resampling.BILINEAR)
 
-            # skalowanie do rozmiaru okna lupy
-            magnified_img = region.resize((MAG_WIDTH, MAG_HEIGHT), Image.Resampling.BILINEAR)
-            tk_mag_img = ImageTk.PhotoImage(magnified_img)
-
-            # okno lupy
-            top = tk.Toplevel(self.root)
-            top.transient(self.root) # info dla menedżera okien, że okno jest "pomocnicze" dla głównego
-            top.overrideredirect(True) # usunięcie belki tytułowej i ramek
-
-            # pozycjonowanie okna - wycentrowane na kursorze
-            pos_x = int(event.x_root - (MAG_WIDTH / 2))
-            pos_y = int(event.y_root - (MAG_HEIGHT / 2))
-            top.geometry(f"{MAG_WIDTH}x{MAG_HEIGHT}+{pos_x}+{pos_y}")
-
-            frame = ttk.Frame(top, bootstyle="info", padding=2)
-            frame.pack(fill=BOTH, expand=True)
-
-            # etykieta z obrazem
-            label = ttk.Label(frame, image=tk_mag_img, background="white")
-            label.image = tk_mag_img # zachowanie referencji
-            label.pack(fill=BOTH, expand=True)
-
-            # zamykanie lupy
-            def close_magnifier(_=None):
-                top.destroy()
-
-            # przejęcie focusu, aby zadziałał Esc i FocusOut
-            top.focus_set()
-
-            # zamknięcie przy kliknięciu lewym przyciskiem myszy wewnątrz,
-            # Esc, lub utracie fokusu (klik na zewnątrznej kontrolce np. polu tekstowym)
-            top.bind("<Button-1>", close_magnifier)
-            top.bind("<Escape>", close_magnifier)
-            top.bind("<FocusOut>", close_magnifier)
-
+            # referencja do obrazu, by nie został usunięty przez garbage collector
+            self.tk_mag_img = ImageTk.PhotoImage(magnified_img)
+            self.mag_label.config(image=self.tk_mag_img)
         except Exception as e:
-            print(f"Błąd lupy: {e}")
+            # ignorowanie drobnych błędów dla funkcji crop
+            print(e)
+
+
+    def hide_magnifier(self, event):
+        """ zamykanie okna lupy po zwolnieniu prawego przycisku myszy """
+        if self.magnifier_win:
+            self.magnifier_win.destroy()
+            self.magnifier_win = None
+            self.tk_mag_img = None
+
+
+    # def show_magnifier(self, event):
+    #     """ wyświetlanie lupę (okno powiększające) w miejscu kursora """
+    #     src = self.processed_image if self.processed_image else self.original_image
+    #     if not src:
+    #         return
+
+    #     # ustawienia lupy
+    #     MAG_WIDTH, MAG_HEIGHT = 750, 300  # rozmiar okna lupy
+    #     ZOOM_FACTOR = 2.0                 # powiększenie względem oryginału (200%)
+
+    #     # współrzędne kliknięcia względem oryginalnego obrazu
+    #     # event.x/y -  współrzędne na canvas
+    #     # self.img_x/y -  przesunięcie obrazu (panning)
+    #     # self.scale - aktualny zoom głównego widoku
+
+    #     # pozycja pixela oryginału
+    #     orig_x = (event.x - self.img_x) / self.scale
+    #     orig_y = (event.y - self.img_y) / self.scale
+
+    #     # obszar do wycięcia z oryginału
+    #     crop_w = MAG_WIDTH / ZOOM_FACTOR
+    #     crop_h = MAG_HEIGHT / ZOOM_FACTOR
+
+    #     x1 = orig_x - (crop_w / 2)
+    #     y1 = orig_y - (crop_h / 2)
+    #     x2 = x1 + crop_w
+    #     y2 = y1 + crop_h
+
+    #     try:
+    #         # wycięcie i przeskalowanie
+    #         region = src.crop((x1, y1, x2, y2))
+
+    #         # skalowanie do rozmiaru okna lupy
+    #         magnified_img = region.resize((MAG_WIDTH, MAG_HEIGHT), Image.Resampling.BILINEAR)
+    #         tk_mag_img = ImageTk.PhotoImage(magnified_img)
+
+    #         # okno lupy
+    #         top = tk.Toplevel(self.root)
+    #         top.transient(self.root) # info dla menedżera okien, że okno jest "pomocnicze" dla głównego
+    #         top.overrideredirect(True) # usunięcie belki tytułowej i ramek
+
+    #         # pozycjonowanie okna - wycentrowane na kursorze
+    #         pos_x = int(event.x_root - (MAG_WIDTH / 2))
+    #         pos_y = int(event.y_root - (MAG_HEIGHT / 2))
+    #         top.geometry(f"{MAG_WIDTH}x{MAG_HEIGHT}+{pos_x}+{pos_y}")
+
+    #         frame = ttk.Frame(top, bootstyle="info", padding=2)
+    #         frame.pack(fill=BOTH, expand=True)
+
+    #         # etykieta z obrazem
+    #         label = ttk.Label(frame, image=tk_mag_img, background="white")
+    #         label.image = tk_mag_img # zachowanie referencji
+    #         label.pack(fill=BOTH, expand=True)
+
+    #         # zamykanie lupy
+    #         def close_magnifier(_=None):
+    #             top.destroy()
+
+    #         # przejęcie focusu, aby zadziałał Esc i FocusOut
+    #         top.focus_set()
+
+    #         # zamknięcie przy kliknięciu lewym przyciskiem myszy wewnątrz,
+    #         # Esc, lub utracie fokusu (klik na zewnątrznej kontrolce np. polu tekstowym)
+    #         top.bind("<Button-1>", close_magnifier)
+    #         top.bind("<Escape>", close_magnifier)
+    #         top.bind("<FocusOut>", close_magnifier)
+
+    #     except Exception as e:
+    #         print(f"Błąd lupy: {e}")
 
 
     def open_batch_dialog(self):

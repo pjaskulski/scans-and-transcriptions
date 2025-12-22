@@ -32,7 +32,8 @@ Above the text field in the right panel of the application, there's a bar with t
 
 ![Screen](/doc/images_folder.png)
 
-Below there is a bar with information about the current (displayed) scan file: its name and sequence number in the series, and the number of all scans in the folder. On the right side there are 'A+' and 'A-' buttons that can be used to adjust the font size in the text field. In the center are buttons for reading the transcript aloud: READ starts reading, and STOP stops it. A combo box allows you to select the language. The read aloud function uses the gTTS library and requires internet access, so there may be a short wait before it begins.
+Below is a bar with information about the current (displayed) scan file: its name and number in the series, and the total number of scans in the folder. On the right are the ‘A+’ and ‘A-’ buttons, which are used to adjust the font size in the text field. Between the scan file name and the font size adjustment buttons, there is a search field in the transcription. After entering the text you are looking for and pressing the Enter key, the application highlights the found occurrences of the text. You can also use the arrow button to start the search, and the button with the “x” symbol removes the highlights and clears the search field. 
+The second row of the toolbar contains buttons for reading the transcription aloud: “>” (read) starts reading, “■” stops it, and “||” means pause. The combo box allows you to select the reading language. The read aloud function uses the gTTS library and requires Internet access, so there may be a short wait before it starts.
 
 ![Screen](/doc/image_info.png)
 
