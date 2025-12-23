@@ -377,7 +377,11 @@ class ManuscriptEditor:
 
     def perform_search(self):
         """ wyszukuje i podświetla frazę w tekście transkrypcji """
+        # czyszczenie poprzednich wyników wyszukiwania
         self.text_area.tag_remove("search_highlight", "1.0", tk.END)
+        # czyszczenie kolorowania nazw własnych
+        for tag in ["PERS", "LOC", "ORG"]:
+            self.text_area.tag_remove(tag, "1.0", tk.END)
 
         query = self.search_var.get().strip()
         if not query:
@@ -428,8 +432,8 @@ class ManuscriptEditor:
         automatyczne usuwanie podświetlenia nazw własnych i ramek ze skanu
         przy edycji tekstu
         """
-        if self.text_area.tag_ranges("entity_highlight"):
-            self.text_area.tag_remove("entity_highlight", "1.0", tk.END)
+        for tag in ["PERS", "LOC", "ORG"]:
+            self.text_area.tag_remove(tag, "1.0", tk.END)
         self.canvas.delete("ner_box") # usuwanie ramek z obrazu
 
 
@@ -455,7 +459,7 @@ class ManuscriptEditor:
                 # wczytywanie jeżeli suma kontrolna się zgadza
                 if cache_data.get("checksum") == current_checksum:
                     self.last_entities = cache_data.get("entities", {})
-                    self.text_area.tag_remove("PERS", "1.0", tk.END) # Czyszczenie przed nałożeniem
+                    self.text_area.tag_remove("PERS", "1.0", tk.END) # czyszczenie poprzednich
                     self.text_area.tag_remove("LOC", "1.0", tk.END)
                     self.text_area.tag_remove("ORG", "1.0", tk.END)
                     self._apply_ner_categories(self.last_entities)
