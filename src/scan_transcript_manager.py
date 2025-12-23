@@ -4,6 +4,7 @@ import re
 import json
 import threading
 import tempfile
+import hashlib
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -253,8 +254,11 @@ class ManuscriptEditor:
         self.text_scroll.pack(side=RIGHT, fill=Y)
         self.text_area.pack(side=LEFT, fill=BOTH, expand=True, padx=5, pady=5)
 
-        # konfiguracja stylu podświetlenia dla NER (żółte tło)
-        self.text_area.tag_configure("entity_highlight", background="#ffcc00", foreground="black")
+        # konfiguracja kolorów dla różnych rodzajów nazw własnych (NER)
+        self.text_area.tag_configure("PERS", background="#ffcc00", foreground="black")
+        self.text_area.tag_configure("LOC", background="#C1FFC1", foreground="black")
+        self.text_area.tag_configure("ORG", background="#D1EAFF", foreground="black")
+
         # konfiguracja dla wyszukiwania w tekście transkrypcji
         self.text_area.tag_configure("search_highlight", background="#00ffff", foreground="black")
 
@@ -352,6 +356,18 @@ class ManuscriptEditor:
 
         self.select_folder()
 
+    def _calculate_checksum(self, text):
+        """ suma kontrolna SHA-256 dla tekstu transkrypcji """
+        return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+
+    def _get_ner_json_path(self):
+        """ ścieżka do pliku .json z metadanymi dla aktualnego skanu """
+        if not self.file_pairs:
+            return None
+        txt_path = self.file_pairs[self.current_index]['txt']
+        return os.path.splitext(txt_path)[0] + ".json"
+
 
     def clear_search(self):
         """ czyści wyniki wyszukiwania """
@@ -418,37 +434,57 @@ class ManuscriptEditor:
 
 
     def start_ner_analysis(self):
-        """
-        inicjacja procesu ekstrakcji nazw własnych w osobnym wątku
+        """ inicjacja procesu ekstrakcji nazw własnych przez AI lub
+            wczytanie nazw własnych z pliku metadanych, w osobnym wątku
         """
         text = self.text_area.get(1.0, tk.END).strip()
         if not text or self.is_transcribing:
             return
 
         self.btn_ner.config(state="disabled")
-        self.text_area.tag_remove("entity_highlight", "1.0", tk.END)
 
-        # wykorzystanie wątku zapobiega zawieszeniu interfejsu
-        thread = threading.Thread(target=self._ner_worker, args=(text,), daemon=True)
+        current_checksum = self._calculate_checksum(text)
+        json_path = self._get_ner_json_path()
+
+        # próba wczytania metadanych z json
+        if json_path and os.path.exists(json_path):
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    cache_data = json.load(f)
+
+                # wczytywanie jeżeli suma kontrolna się zgadza
+                if cache_data.get("checksum") == current_checksum:
+                    self.last_entities = cache_data.get("entities", {})
+                    self.text_area.tag_remove("PERS", "1.0", tk.END) # Czyszczenie przed nałożeniem
+                    self.text_area.tag_remove("LOC", "1.0", tk.END)
+                    self.text_area.tag_remove("ORG", "1.0", tk.END)
+                    self._apply_ner_categories(self.last_entities)
+                    return
+
+            except Exception as e:
+                print(f"Błąd wczytania metadanych NER: {e}")
+
+        # wywołanie AI jeżeli brak pliku json z metadanymi
+        self.btn_ner.config(state="disabled")
+        # suma kontrolna przekazywana do wątku, w celu zapisu w json po analizie AI
+        thread = threading.Thread(target=self._ner_worker,
+                                  args=(text, current_checksum), daemon=True)
         thread.start()
 
 
-    def _ner_worker(self, text):
-        """
-        dodatkowa analiza tekstu przez Gemini w celu uzyskania listy nazw własnych
-        """
+    def _ner_worker(self, text, checksum):
+        """ dodatkowa analiza tekstu przez Gemini w celu uzyskania listy nazw własnych:
+            osoby, miejsca, instytucje """
         try:
             client = genai.Client(api_key=self.api_key)
 
-            current_pair = self.file_pairs[self.current_index]
-            with open(current_pair['img'], 'rb') as f:
-                image_bytes = f.read()
-
             prompt = (
-                "Z poniższego tekstu wypisz wyłącznie nazwy własne (osoby, miejscowości, instytucje). "
-                "Zwróć je jako listę słów oddzielonych przecinkami, bez żadnego dodatkowego komentarza, "
-                "w takiej formie w jakiej występują w tekście. "
-                "Tekst: " + text
+                "Zidentyfikuj w tekście nazwy własne i przypisz je do kategorii: "
+                "PERS (osoby), LOC (nazwy geograficze/miejscowości/kraje), ORG (organizacje/instytucje). "
+                "UWAGA: Niektóre nazwy mogą być podzielone między wiersze (np. dywizem lub nową linią). "
+                "Zidentyfikuj je jako jedną pełną nazwę. "
+                "Zwróć wynik wyłącznie jako JSON w formacie: "
+                "{\"PERS\": [\"nazwa1\", ...], \"LOC\": [\"nazwa1\", ...], \"ORG\": [\"nazwa1\", ...]}"
             )
 
             config = types.GenerateContentConfig(
@@ -456,21 +492,79 @@ class ManuscriptEditor:
             )
 
             response = client.models.generate_content(
-                # gemini-flash-lite-latest, gemini-flash-latest, gemini-3-pro-preview, gemini-3-flash-preview
                 model="gemini-flash-latest",
-                contents=prompt,
+                contents=prompt + "\nTekst: " + text,
                 config=config
             )
 
             if response.text:
-                # przekształcenie odpowiedzi na listę unikalnych fraz
-                self.last_entities= [e.strip() for e in response.text.split(",") if len(e.strip()) > 2]
-                self.root.after(0, self._apply_ner_txt_only)
+                json_str = response.text.replace("```json", "").replace("```", "").strip()
+                entities_dict = json.loads(json_str)
+                self.last_entities = entities_dict
 
+                # zapis metdanych NER do pliku *.json
+                self._save_ner_cache(entities_dict, checksum)
+
+                self.root.after(0, self._apply_ner_categories, entities_dict)
         except Exception as e:
-            print(f"Błąd analizy NER: {e}")
+            print(f"Błąd NER: {e}")
         finally:
             self.root.after(0, lambda: self.btn_ner.config(state="normal"))
+
+
+    def _save_ner_cache(self, entities, checksum):
+        """ zapis wyników NER i sumy kontrolnej do pliku .json """
+        json_path = self._get_ner_json_path()
+        if not json_path: return
+
+        cache_data = {
+            "checksum": checksum,
+            "entities": entities
+        }
+        try:
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(cache_data, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"Błąd zapisu metadanych NER w pliku *.json: {e}")
+
+
+    def _apply_ner_categories(self, entities_dict):
+        """ podświetlenie nazw własnych z podziałem na kolory i obsługą rozbitych słów """
+        # czyszczenie poprzednich tagów
+        for tag in ["PERS", "LOC", "ORG"]:
+            self.text_area.tag_remove(tag, "1.0", tk.END)
+
+        for category, names in entities_dict.items():
+            for name in names:
+                # wzorzec regex, który pozwala znaleźć np. "Krak-ów" szukając "Kraków"
+                search_pattern = ""
+                name_len = len(name)
+
+                for i, char in enumerate(name):
+                    search_pattern += re.escape(char)
+                    # jeżeli to nie jest ostatni znak, dodaje elastyczne dopasowanie rozbić
+                    if i < name_len - 1:
+                        # opcjonalny myślnik, spacje i nową linię
+                        search_pattern += r"(?:-?\s*\n?\s*)"
+
+                start_pos = "1.0"
+                while True:
+                    match_count = tk.IntVar()
+                    start_pos = self.text_area.search(search_pattern, start_pos,
+                                                     stopindex=tk.END, nocase=True,
+                                                     regexp=True, count=match_count)
+                    if not start_pos:
+                        break
+
+                    # koniec na podstawie faktycznej liczby znalezionych znaków
+                    end_pos = f"{start_pos}+{match_count.get()}c"
+
+                    # kolor odpowiedni dla kategorii
+                    self.text_area.tag_add(category, start_pos, end_pos)
+                    start_pos = end_pos
+
+        if any(entities_dict.values()):
+            self.btn_box.config(state="normal")
 
 
     def _apply_ner_txt_only(self):
@@ -505,7 +599,12 @@ class ManuscriptEditor:
             with open(current_pair['img'], 'rb') as f:
                 image_bytes = f.read()
 
-            entities_str = ", ".join(self.last_entities)
+            entities_to_find = []
+            for cat, names in self.last_entities.items():
+                for name in names:
+                    entities_to_find.append(name)
+
+            entities_str = ", ".join(entities_to_find)
             prompt = (f"Na załączonym obrazie znajdź lokalizację następujących nazw: {entities_str}. "
                       "Uwzględnij tylko i wyłącznie nazwy z listy, inne zignoruj. "
                       "Dla każdej nazwy podaj współrzędne ramki w formacie: \n"
@@ -1174,77 +1273,6 @@ class ManuscriptEditor:
             self.tk_mag_img = None
 
 
-    # def show_magnifier(self, event):
-    #     """ wyświetlanie lupę (okno powiększające) w miejscu kursora """
-    #     src = self.processed_image if self.processed_image else self.original_image
-    #     if not src:
-    #         return
-
-    #     # ustawienia lupy
-    #     MAG_WIDTH, MAG_HEIGHT = 750, 300  # rozmiar okna lupy
-    #     ZOOM_FACTOR = 2.0                 # powiększenie względem oryginału (200%)
-
-    #     # współrzędne kliknięcia względem oryginalnego obrazu
-    #     # event.x/y -  współrzędne na canvas
-    #     # self.img_x/y -  przesunięcie obrazu (panning)
-    #     # self.scale - aktualny zoom głównego widoku
-
-    #     # pozycja pixela oryginału
-    #     orig_x = (event.x - self.img_x) / self.scale
-    #     orig_y = (event.y - self.img_y) / self.scale
-
-    #     # obszar do wycięcia z oryginału
-    #     crop_w = MAG_WIDTH / ZOOM_FACTOR
-    #     crop_h = MAG_HEIGHT / ZOOM_FACTOR
-
-    #     x1 = orig_x - (crop_w / 2)
-    #     y1 = orig_y - (crop_h / 2)
-    #     x2 = x1 + crop_w
-    #     y2 = y1 + crop_h
-
-    #     try:
-    #         # wycięcie i przeskalowanie
-    #         region = src.crop((x1, y1, x2, y2))
-
-    #         # skalowanie do rozmiaru okna lupy
-    #         magnified_img = region.resize((MAG_WIDTH, MAG_HEIGHT), Image.Resampling.BILINEAR)
-    #         tk_mag_img = ImageTk.PhotoImage(magnified_img)
-
-    #         # okno lupy
-    #         top = tk.Toplevel(self.root)
-    #         top.transient(self.root) # info dla menedżera okien, że okno jest "pomocnicze" dla głównego
-    #         top.overrideredirect(True) # usunięcie belki tytułowej i ramek
-
-    #         # pozycjonowanie okna - wycentrowane na kursorze
-    #         pos_x = int(event.x_root - (MAG_WIDTH / 2))
-    #         pos_y = int(event.y_root - (MAG_HEIGHT / 2))
-    #         top.geometry(f"{MAG_WIDTH}x{MAG_HEIGHT}+{pos_x}+{pos_y}")
-
-    #         frame = ttk.Frame(top, bootstyle="info", padding=2)
-    #         frame.pack(fill=BOTH, expand=True)
-
-    #         # etykieta z obrazem
-    #         label = ttk.Label(frame, image=tk_mag_img, background="white")
-    #         label.image = tk_mag_img # zachowanie referencji
-    #         label.pack(fill=BOTH, expand=True)
-
-    #         # zamykanie lupy
-    #         def close_magnifier(_=None):
-    #             top.destroy()
-
-    #         # przejęcie focusu, aby zadziałał Esc i FocusOut
-    #         top.focus_set()
-
-    #         # zamknięcie przy kliknięciu lewym przyciskiem myszy wewnątrz,
-    #         # Esc, lub utracie fokusu (klik na zewnątrznej kontrolce np. polu tekstowym)
-    #         top.bind("<Button-1>", close_magnifier)
-    #         top.bind("<Escape>", close_magnifier)
-    #         top.bind("<FocusOut>", close_magnifier)
-
-    #     except Exception as e:
-    #         print(f"Błąd lupy: {e}")
-
-
     def open_batch_dialog(self):
         """ otwiera okno dialogowe do przetwarzania seryjnego """
         if self.is_transcribing:
@@ -1624,6 +1652,6 @@ class ManuscriptEditor:
 # ----------------------------------- MAIN -------------------------------------
 if __name__ == "__main__":
     # dostępne motywy: "superhero", "journal" (jasny), "darkly", "solar", "minty"
-    app_window = ttk.Window(themename="journal", className="ScanTranscript")
+    app_window = ttk.Window(themename="journal", className="ScansAndTranscriptions")
     app = ManuscriptEditor(app_window)
     app_window.mainloop()
