@@ -1005,7 +1005,7 @@ class ManuscriptEditor:
         """ ładowanie zmiennych środowiskowych i promptu """
         load_dotenv()
 
-        self.api_key = os.environ.get("GEMINI_API_KEY_NANO")
+        self.api_key = os.environ.get("GEMINI_API_KEY")
 
         self.prompt_filename_var.set("Brak (wybierz plik)")
 
