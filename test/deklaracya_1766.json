@@ -1,0 +1,53 @@
+{
+    "checksum": "138830d3da24da3ce20a96e0c693a88de0e2fc3f91b21d651e9eb49f5a94efd8",
+    "entities": {
+        "PERS": [],
+        "LOC": [
+            "Pruſkiego",
+            "Rzeczypoſpolitey",
+            "Polſkiey"
+        ],
+        "ORG": [
+            "Kommiſſye Skarbowe",
+            "Kommiſſye Woyſkowe"
+        ]
+    },
+    "coordinates": [
+        {
+            "name": "Pruſkiego",
+            "coords": [
+                138,
+                516,
+                168,
+                686
+            ]
+        },
+        {
+            "name": "Rzeczypoſpolitey",
+            "coords": [
+                226,
+                139,
+                255,
+                436
+            ]
+        },
+        {
+            "name": "Polſkiey",
+            "coords": [
+                873,
+                648,
+                900,
+                792
+            ]
+        },
+        {
+            "name": "Kommiſſye Skarbowe",
+            "coords": [
+                427,
+                625,
+                455,
+                885
+            ]
+        }
+    ]
+}

@@ -33,3 +33,11 @@ Description: Załącznik do umowy z dnia 16 sierpnia 1945 r. między Rzecząposp
 File: pauli_zegota_galicja_19w.jpg
 Address: https://polona2.pl/item/galicya-t-5-poszczegolne-miasta-i-miejscowosci,MTA1NjY3MTA0/6/#info:metadata
 Description: Pauli, Żegota, rękpis - "Galicya". T. 5, Poszczególne miasta i miejscowości
+---
+File: konarski_o_skutecznym_1760.jpg
+Address: https://polona2.pl/item/o-skutecznym-rad-sposobie-albo-o-utrzymywaniu-ordynaryinych-seymow-cz-1,MTI3OTc2MDQ3/10/#info:metadata
+Description: O skutecznym rad sposobie albo o utrzymywaniu ordynaryinych seymow. [Cz. 1].
+--
+File: deklaracya_1766.jpg
+Address: https://polona2.pl/item/deklaracya-jmieniem-krola-jmci-pruskiego-przez-jego-ministra-pelnomocnego-zkonfederowaney,MTQ1MDU1NDQ5/0/#info:metadata
+Description: Deklaracya jmieniem krola jmci pruskiego przez jego ministra pełnomocnego zkonfederowaney Rzeczypospolitey na seymie roku 1766 uczyniona

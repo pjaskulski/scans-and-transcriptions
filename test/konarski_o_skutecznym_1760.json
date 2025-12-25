@@ -1,0 +1,73 @@
+{
+    "checksum": "6d8054c0d10872558cf8cae8e671011e82fe51d40207dcfeab3fdd7f580155fe",
+    "entities": {
+        "PERS": [
+            "ZYGMUNTA trzeciego"
+        ],
+        "LOC": [
+            "Rzpltey",
+            "Rzeczypoſpolitey"
+        ],
+        "ORG": [
+            "Seymiku Powiatowym",
+            "Seymie",
+            "Seymie Warſzawſkim"
+        ]
+    },
+    "coordinates": [
+        {
+            "name": "ZYGMUNTA trzeciego",
+            "coords": [
+                807,
+                558,
+                887,
+                871
+            ]
+        },
+        {
+            "name": "Rzpltey",
+            "coords": [
+                371,
+                595,
+                401,
+                825
+            ]
+        },
+        {
+            "name": "Rzeczypoſpolitey",
+            "coords": [
+                847,
+                580,
+                927,
+                864
+            ]
+        },
+        {
+            "name": "Seymiku Powiatowym",
+            "coords": [
+                585,
+                584,
+                664,
+                872
+            ]
+        },
+        {
+            "name": "Seymie",
+            "coords": [
+                628,
+                589,
+                660,
+                796
+            ]
+        },
+        {
+            "name": "Seymie Warſzawſkim",
+            "coords": [
+                802,
+                23,
+                841,
+                523
+            ]
+        }
+    ]
+}

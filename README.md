@@ -89,6 +89,10 @@ In some scans, manual reading of text can be facilitated by image filters, the f
 
 ![Screen](/doc/screen_scan_transcript_filtr.jpg)
 
+An example of transcription of an 18th-century Polish old print:
+
+![Screen](/doc/screen_scan_transcript_print.jpg)
+
 The "test" folder contains sample scans and transcripts.
 
 **Note**: access to the Gemini Pro 3 model via API is subject to a fee, as per the Google pricing page.
