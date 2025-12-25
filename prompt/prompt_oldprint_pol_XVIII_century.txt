@@ -12,7 +12,7 @@ Oryginalna pisownia: Bezwzględnie zachowaj oryginalną pisownię, gramatykę i 
 
 Podział wierszy: Zachowaj dokładny podział na wiersze (linie) z oryginału. Każdy nowy wiersz w druku to nowy wiersz w Twojej odpowiedzi.
 
-POMIŃ ilustracje i ręczne notatki obok druku, odczytuj tylko tekst drukowany.
+POMIŃ ilustracje i ręczne notatki obok druku, odczytaj tylko tekst drukowany.
 
 Zarządzanie niepewnością:
 
