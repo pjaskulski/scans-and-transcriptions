@@ -85,11 +85,13 @@ Example of colour coding different categories of entity names (PERSON, LOC, ORG)
 
 ![Screen](/doc/entity_names_on_scan_2.jpg)
 
-**Note**: access to the Gemini Pro 3 model via API is subject to a fee, as per the Google pricing page.
-
 In some scans, manual reading of text can be facilitated by image filters, the following filters are available: negative and contrast (the screenshot below shows the negative filter used).
 
 ![Screen](/doc/screen_scan_transcript_filtr.jpg)
+
+The "test" folder contains sample scans and transcripts.
+
+**Note**: access to the Gemini Pro 3 model via API is subject to a fee, as per the Google pricing page.
 
 The Gemini model was involved in the application programming :-)
 
