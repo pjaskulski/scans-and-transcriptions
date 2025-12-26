@@ -288,6 +288,10 @@ class ManuscriptEditor:
                                   bootstyle="success-outline", width=4, padding=2, state="disabled")
         self.btn_cls.pack(side=LEFT, padx=2)
 
+        self.btn_leg = ttk.Button(ai_tools, text="LEG", command=self.show_legend,
+                                  bootstyle="info-outline", width=4, padding=2)
+        self.btn_leg.pack(side=LEFT, padx=2)
+
         # prawa strona wiersza 2: lektor (TTS)
         tts_tools = ttk.Frame(self.header_row2)
         tts_tools.pack(side=RIGHT)
@@ -332,7 +336,7 @@ class ManuscriptEditor:
 
         # konfiguracja kolorów dla różnych rodzajów nazw własnych (NER)
         self.category_colors = {
-            "PERS": "#f4d65f",  # Jasny różowy (Osoby)
+            "PERS": "#f4d65f",  # Jasny żółty (Osoby)
             "LOC": "#C1FFC1",   # Jasny zielony (Miejsca)
             "ORG": "#D1EAFF"    # Jasny niebieski (Organizacje)
         }
@@ -447,11 +451,22 @@ class ManuscriptEditor:
                                             mode='indeterminate',
                                             bootstyle="success-striped")
 
+        # konfiguracja tagu aktywnej linii w edytorze transkrypcji
+        self.text_area.tag_configure("active_line", background="#e8e8e8", foreground="black")
+
+        # przesunięcie tagu aktywnej linii na sam dół hierarchii
+        self.text_area.tag_lower("active_line")
+
+        # powiązania zdarzeń aktualizujących podświetlenie linii
+        self.text_area.bind("<KeyRelease>", self.update_active_line_highlight)
+        self.text_area.bind("<ButtonRelease-1>", self.update_active_line_highlight)
+
         # tooltips
         ToolTip(self.btn_fit, "Dopasowanie skanu do szerokości pola obrazu")
         ToolTip(self.btn_ner, "Uruchom analizę nazw własnych (osoby, miejsca, instytucje)")
         ToolTip(self.btn_box, "Zlokalizuj znalezione nazwy własne na skanie (wymaga wcześniejszego NER)")
         ToolTip(self.btn_cls, "Wyczyść wszystkie oznaczenia ze skanu i podświetlenia w tekście")
+        ToolTip(self.btn_leg, "Pokaż legendę kolorów analizy NER")
         ToolTip(self.btn_speak, "Odsłuchaj tekst transkrypcji (lektor)")
         ToolTip(self.btn_stop, "Zatrzymaj odczytywanie (lektor)")
         ToolTip(self.btn_pause, "Pauza odczytywania (lektor)")
@@ -472,6 +487,62 @@ class ManuscriptEditor:
         ToolTip(self.lang_combobox, "Wybór języka dla lektora TTS")
 
         self.select_folder()
+
+
+    def update_active_line_highlight(self, event=None):
+        """ podświetlanie linii, w której aktualnie znajduje się kursor """
+        # usuwanie starego podświetlenia
+        self.text_area.tag_remove("active_line", "1.0", tk.END)
+
+        # pobieranie początku i końca bieżącej linii
+        line_start = self.text_area.index("insert linestart")
+        line_end = self.text_area.index("insert lineend + 1c")
+
+        # nakładanie tagu
+        self.text_area.tag_add("active_line", line_start, line_end)
+
+        # active_line jest zawsze pod kategoriami NER
+        for tag in ["PERS", "LOC", "ORG"]:
+            self.text_area.tag_raise(tag, "active_line")
+
+
+    def show_legend(self):
+        """ wyświetlanie małego okna z opisem kolorów NER """
+        leg_win = tk.Toplevel(self.root)
+        leg_win.title("Legenda NER")
+        leg_win.geometry("550x240")
+        leg_win.resizable(False, False)
+        leg_win.transient(self.root)
+
+        # główny kontener z marginesem
+        container = ttk.Frame(leg_win, padding=15)
+        container.pack(fill=BOTH, expand=True)
+
+        ttk.Label(container, text="Kategorie nazw własnych:",
+                  font=("Segoe UI", 10, "bold")).pack(pady=(0, 10))
+
+        # definicje opisów dla kategorii
+        descriptions = {
+            "PERS": "Osoby (tytuły + imiona, nazwiska, narody)",
+            "LOC": "Geografia (miejsca, majątki, rzeki, kraje)",
+            "ORG": "Organizacje (urzędy, instytucje, parafie, stowarzyszenia)"
+        }
+
+        for cat, color in self.category_colors.items():
+            row = ttk.Frame(container)
+            row.pack(fill=X, pady=3)
+
+            cv = tk.Canvas(row, width=18, height=18, highlightthickness=0, bd=0)
+            cv.pack(side=LEFT, padx=(0, 10))
+            cv.create_rectangle(0, 0, 18, 18, fill=color, outline="gray")
+
+            # nazwa kategorii i opis
+            ttk.Label(row, text=f"{cat}: ", font=("Segoe UI", 9, "bold")).pack(side=LEFT)
+            ttk.Label(row, text=descriptions.get(cat, ""), font=("Segoe UI", 8)).pack(side=LEFT)
+
+        # przycisk zamknięcia okna
+        ttk.Button(container, text="Zamknij", command=leg_win.destroy,
+                   bootstyle="secondary-link").pack(side=BOTTOM, pady=(10, 0))
 
 
     def clear_all_annotations(self):
@@ -1365,6 +1436,7 @@ Zwróć tylko listę tych danych bez żadnych dodatkowych komentarzy.
         self.text_area.focus_set()
         self.text_area.mark_set("insert", "1.0")
         self.text_area.see("1.0")
+        self.root.after(10, self.update_active_line_highlight)
 
 
     def redraw_image(self):
