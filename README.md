@@ -13,7 +13,7 @@ Application Features:
   - Simple filters can be applied to scans: contrast enhancement and image inversion.
   - A feature that aids verification is the ability to read the transcript aloud (TTS reader), this feature requires internet access.
   - Ability to adjust the font size in the transcription field.
-  - Due to the fact that transcription errors quite often appear in proper names (people, places, institutions), the option to highlight such words (NER button) has been added so that special attention can be paid to them during transcription verification.
+  - Due to the fact that transcription errors quite often appear in proper names (people, places, institutions), the option to highlight such words (NER button) has been added so that special attention can be paid to them during transcription verification. Experimental function (BOX button) for marking entity names in the scan. The names are marked with frames, and the name from transcription is placed above the frame, for quick assessment of transcription accuracy. The frames for entity names can be adjusted in terms of size and position. The list of found entity names can be exported to a CSV file for further use.
 
 
 ## Screenshots and description:

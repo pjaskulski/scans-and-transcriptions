@@ -2,6 +2,7 @@
 import os
 import re
 import json
+import csv
 import threading
 import tempfile
 import hashlib
@@ -292,6 +293,10 @@ class ManuscriptEditor:
                                   bootstyle="info-outline", width=4, padding=2)
         self.btn_leg.pack(side=LEFT, padx=2)
 
+        self.btn_csv = ttk.Button(ai_tools, text="CSV", command=self.export_ner_to_csv,
+                                  bootstyle="success-outline")
+        self.btn_csv.pack(side=LEFT, fill=X, expand=True, padx=5)
+
         # prawa strona wiersza 2: lektor (TTS)
         tts_tools = ttk.Frame(self.header_row2)
         tts_tools.pack(side=RIGHT)
@@ -467,6 +472,7 @@ class ManuscriptEditor:
         ToolTip(self.btn_box, "Zlokalizuj znalezione nazwy własne na skanie (wymaga wcześniejszego NER)")
         ToolTip(self.btn_cls, "Wyczyść wszystkie oznaczenia ze skanu i podświetlenia w tekście")
         ToolTip(self.btn_leg, "Pokaż legendę kolorów analizy NER")
+        ToolTip(self.btn_csv, "Eksport nazw własnych do pliku CSV")
         ToolTip(self.btn_speak, "Odsłuchaj tekst transkrypcji (lektor)")
         ToolTip(self.btn_stop, "Zatrzymaj odczytywanie (lektor)")
         ToolTip(self.btn_pause, "Pauza odczytywania (lektor)")
@@ -487,6 +493,100 @@ class ManuscriptEditor:
         ToolTip(self.lang_combobox, "Wybór języka dla lektora TTS")
 
         self.select_folder()
+
+
+    def export_ner_to_csv(self):
+        """ eksport NER do CSV z mianownikiem i kontekstem z całego katalogu """
+        if not self.file_pairs:
+            return
+
+        target_path = filedialog.asksaveasfilename(
+            title="Zapisz nazwy własne w pliku CSV",
+            defaultextension=".csv",
+            filetypes=[("Plik CSV", "*.csv")],
+            parent=self.root
+        )
+        if not target_path:
+            return
+
+        all_data_to_process = []
+        unique_names = set()
+
+        for pair in self.file_pairs:
+            json_path = os.path.splitext(pair['txt'])[0] + ".json"
+            txt_path = pair['txt']
+
+            if os.path.exists(json_path) and os.path.exists(txt_path):
+                try:
+                    with open(json_path, 'r', encoding='utf-8') as f:
+                        entities = json.load(f).get("entities", {})
+
+                    for cat, names in entities.items():
+                        for name in names:
+                            all_data_to_process.append({
+                                'orig': name,
+                                'cat': cat,
+                                'file': os.path.basename(pair['img']),
+                            })
+                            unique_names.add(name)
+                except Exception as e:
+                    print(f"Błąd przetwarzania {pair['name']}: {e}")
+
+        if not all_data_to_process:
+            messagebox.showinfo("Eksport", "Brak danych NER do eksportu.")
+            return
+
+        self.btn_ai.config(state="disabled")
+        threading.Thread(target=self._ner_export_worker,
+                         args=(list(unique_names), all_data_to_process, target_path),
+                         daemon=True).start()
+
+
+    def _ner_export_worker(self, names_list, full_records, target_path):
+        """ wątek AI: mianownik + zapis 5 kolumn do CSV """
+        try:
+            nominative_map = {}
+            client = genai.Client(api_key=self.api_key)
+
+            # przetwarzanie paczek nazw przez Gemini
+            for i in range(0, len(names_list), 50):
+                batch = names_list[i:i+50]
+                prompt = (
+                    "Dla podanej listy nazw własnych z dokumentów historycznych, "
+                    "podaj ich formę w mianowniku, nie zmieniaj rodzaju nazw (męski, żeński, nijaki). "
+                    "Zwróć WYŁĄCZNIE czysty JSON: {\"oryginał\": \"mianownik\", ...}. "
+                    f"Lista: {', '.join(batch)}"
+                )
+
+                config = types.GenerateContentConfig(
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True)
+                )
+
+                response = client.models.generate_content(
+                    model="gemini-flash-latest", # lub gemini-3-flash-preview
+                    contents=prompt,
+                    config=config
+                )
+
+                if response.text:
+                    json_str = response.text.replace("```json", "").replace("```", "").strip()
+                    nominative_map.update(json.loads(json_str))
+
+            # zapis do CSV (separator średnik)
+            with open(target_path, 'w', encoding='utf-8-sig', newline='') as csvfile:
+                writer = csv.writer(csvfile, delimiter=';')
+                writer.writerow(['Nazwa oryginalna', 'Mianownik', 'Kategoria', 'Plik skanu'])
+
+                for rec in full_records:
+                    base_name = nominative_map.get(rec['orig'], rec['orig'])
+                    writer.writerow([rec['orig'], base_name, rec['cat'], rec['file']])
+
+            self.root.after(0, lambda: messagebox.showinfo("Sukces", f"Eksport zakończony:\n{target_path}"))
+
+        except Exception as e:
+            self.root.after(0, lambda: messagebox.showerror("Błąd eksportu", str(e)))
+        finally:
+            self.root.after(0, lambda: self.btn_ai.config(state="normal", text="Gemini"))
 
 
     def update_active_line_highlight(self, event=None):
