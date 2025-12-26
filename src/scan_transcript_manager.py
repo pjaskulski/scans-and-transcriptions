@@ -294,8 +294,8 @@ class ManuscriptEditor:
         self.btn_leg.pack(side=LEFT, padx=2)
 
         self.btn_csv = ttk.Button(ai_tools, text="CSV", command=self.export_ner_to_csv,
-                                  bootstyle="success-outline")
-        self.btn_csv.pack(side=LEFT, fill=X, expand=True, padx=5)
+                                  bootstyle="success-outline", width=4, padding=2)
+        self.btn_csv.pack(side=LEFT, padx=2)
 
         # prawa strona wiersza 2: lektor (TTS)
         tts_tools = ttk.Frame(self.header_row2)
