@@ -173,7 +173,7 @@ class ManuscriptEditor:
         self.cursor_resizing = "bottom_right_corner"
         self.cursor_move = "fleur"
         if os.name == 'nt': # Windows
-            self.cursor_resizing = "sizenwse"
+            self.cursor_resizing = "sizenwse" #?
             self.cursor_move = "fleur"
 
         self.active_box_tag = None
@@ -573,7 +573,7 @@ class ManuscriptEditor:
                     nominative_map.update(json.loads(json_str))
 
             # zapis do CSV (separator średnik)
-            with open(target_path, 'w', encoding='utf-8-sig', newline='') as csvfile:
+            with open(target_path, 'w', encoding='utf-8', newline='') as csvfile:
                 writer = csv.writer(csvfile, delimiter=';')
                 writer.writerow(['Nazwa oryginalna', 'Mianownik', 'Kategoria', 'Plik skanu'])
 
@@ -843,8 +843,8 @@ Zwróć wynik WYŁĄCZNIE jako JSON w formacie:
             self.root.after(0, lambda: self.btn_ner.config(state="normal"))
 
 
-    def _save_ner_cache(self, entities=None, coordinates=None, checksum=None):
-        """ zapis wyników NER, współrzędnych i sumy kontrolnej do pliku .json """
+    def _save_ner_cache(self, entities=None, coordinates=None, checksum=None, tts_checksum=None):
+        """ zapis wyników NER, współrzędnych i sum kontrolnych do pliku .json """
         json_path = self._get_ner_json_path()
         if not json_path:
             return
@@ -865,12 +865,14 @@ Zwróć wynik WYŁĄCZNIE jako JSON w formacie:
             cache_data["entities"] = entities
         if coordinates:
             cache_data["coordinates"] = coordinates
+        if tts_checksum:
+            cache_data["tts_checksum"] = tts_checksum
 
         try:
             with open(json_path, 'w', encoding='utf-8') as f:
                 json.dump(cache_data, f, ensure_ascii=False, indent=4)
         except Exception as e:
-            print(f"Błąd zapisu metadanych NER w pliku *.json: {e}")
+            print(f"Błąd zapisu metadanych w pliku *.json: {e}")
 
 
     def _apply_ner_categories(self, entities_dict):
@@ -1280,18 +1282,42 @@ Zwróć tylko listę tych danych bez żadnych dodatkowych komentarzy.
 
 
     def _tts_worker(self, text):
-        """ kod wykonywany w wątku - tworzenie audio i start odtwarzania """
+        """ kod wykonywany w wątku - tworzenie audio i start odtwarzania,
+            jeżeli aktualnhy plik audio jest w pliku, odtwarzanie z pliku bez
+            nowego generowania
+        """
         try:
             lang_to_use = self.current_tts_lang_code
+            current_checksum = self._calculate_checksum(text)
 
-            temp_dir = tempfile.gettempdir()
-            temp_path = os.path.join(temp_dir, "manuscript_tts_temp.mp3")
+            # ścieżki
+            pair = self.file_pairs[self.current_index]
+            mp3_path = os.path.splitext(pair['img'])[0] + ".mp3"
+            json_path = self._get_ner_json_path()
 
-            tts = gTTS(text=text, lang=lang_to_use)
-            tts.save(temp_path)
+            needs_generation = True
 
+            # sprawdanie czy plik MP3 istnieje i czy suma kontrolna się zgadza
+            if os.path.exists(mp3_path) and os.path.exists(json_path):
+                try:
+                    with open(json_path, 'r', encoding='utf-8') as f:
+                        cache_data = json.load(f)
+                        if cache_data.get("tts_checksum") == current_checksum:
+                            needs_generation = False
+
+                except Exception as e:
+                    print(f"Błąd odczytu cache TTS: {e}")
+
+            # generowanie pliku tylko jeśli to konieczne
+            if needs_generation:
+                tts = gTTS(text=text, lang=lang_to_use)
+                tts.save(mp3_path)
+                # zapis nową sumę kontrolną audio w JSON
+                self._save_ner_cache(tts_checksum=current_checksum)
+
+            # odtwarzanie
             if self.is_reading_audio:
-                self.playback.load_file(temp_path)
+                self.playback.load_file(mp3_path)
                 self.playback.play()
 
                 # odblokowanie pauzy po rozpoczęciu odtwarzania

@@ -2,11 +2,14 @@
 
 Do you have a collection of scanned manuscripts or typescripts? Do you need a transcription? This simple desktop application makes using Gemini for this purpose easy. Once the transcriptions are complete, you can review, verify and correct them.
 
-The 'Scans and Transcriptions' viewer offers the option of reading scans using the Gemini Pro 3 model (please note that using this model via API is subject to a fee!) and the ability to manually correct transcriptions. The application can prepare transcriptions for a single image or a series of files. The Gemini API key should be stored in the `.env` file as the `GEMINI_API_KEY` environment variable (or in the `config/config.json` file under the `api_key` field).
+The idea is simple: the user prepares a folder with scans of manuscripts, typescripts, and old prints, and the application uses various Gemini models to prepare transcriptions, assisting in their verification through visual comparison of scans and transcriptions, voice recordings, and named entity recognition (NER) in areas where errors are more likely to occur. Finally, you receive a folder with scans, transcription files in txt format, mp3 voice recordings, and metadata saved in json files.
+
+Since the application uses models via API, their use is subject to a fee, in accordance with Google's current price list. The Gemini Pro 3 model is used for transcription, the Gemini Flash model is used for searching for proper names, and the Gemini Pro 3 Image model (also known as Nano Banana Pro) is used for locating proper names on a scan.  The application can prepare transcriptions for a single image or a series of files. The Gemini API key should be stored in the `.env` file as the `GEMINI_API_KEY` environment variable (or in the `config/config.json` file under the `api_key` field).
 
 Application Features:
   - Viewing scans and transcripts. The application assumes that the specified directory contains scan files and transcript files with identical names but with the *.txt extension. If a text file is missing, the application will automatically create an empty one.
   - Creating transcripts using the LLM model (Gemini Pro 3, requires internet access) for the current scan or scan series. For scan series, the application displays all scans in the viewed directory and selects those that do not yet have a txt transcript file or that have an empty transcript file. This selection can, of course, be changed.
+  - To perform transcription, you can use one of the predefined prompts (prompts for documents in Polish are currently available), or you can prepare your own prompt.
   - Transcription files are automatically saved when moving to the next/previous file; you can also force saving by pressing the SAVE button.
   - Transcriptions can be saved in a bulk txt file or in a docx file. For docx files, the application also concatenates broken words and lines into paragraphs. 
   - To facilitate verification of transcription accuracy, the application allows you to pan the scan (left mouse button), zoom in/out (mouse scroll wheel), and display a magnifying glass window at a selected location (right mouse button). 
@@ -24,7 +27,7 @@ Application window with a visible enlargement of the fragment (magnifying glass)
 
 In the left panel with the scan, you can move the image - left mouse button, zoom in / out - mouse wheel, enlarge a fragment (magnifying glass) - right mouse button.
 
-Application window while Gemini is reading the scan
+Application window while Gemini is reading the scan (progress bar visible at the top of the right panel, the Gemini button is unavailable while the model is processing the image):
 
 ![Screen](/doc/screen_scan_transcript_przetwarzanie.png)
 
