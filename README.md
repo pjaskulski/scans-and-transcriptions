@@ -39,12 +39,7 @@ Above the text field in the right panel of the application, there's a bar with t
 
 ![Screen](/doc/images_folder.png)
 
-Below is a bar with information about the current (displayed) scan file: its name and number in the series, and the total number of scans in the folder. On the right are the ‘A+’ and ‘A-’ buttons, which are used to adjust the font size in the text field. Between the scan file name and the font size adjustment buttons, there is a search field in the transcription. After entering the text you are looking for and pressing the Enter key, the application highlights the found occurrences of the text. You can also use the arrow button to start the search, and the button with the “x” symbol removes the highlights and clears the search field. 
-The second row of the toolbar contains buttons for reading the transcription aloud: “>” (read) starts reading, “■” stops it, and “||” means pause. The combo box allows you to select the reading language. The read aloud function uses the gTTS library and requires Internet access, so there may be a short wait before it starts.
-
-![Screen](/doc/image_info.png)
-
-Toolbar:
+**Main toolbar**:
 
 ![Screen](/doc/toolbar.png)
 
@@ -60,13 +55,26 @@ List of buttons:
   - Go to the next file
   - Go to the last file
 
-Below the list of buttons there is information with the name of the currently set prompt file, the button on the right allows you to change the prompt.
+Below the list of buttons there is information with the name of the currently set prompt file, the buttons on the right allows you to change the prompt or edit prompt.
 
 If no transcription file exists for the current file, an empty file will be automatically created. Transcription files can be edited manually. In addition to saving via the 'SAVE' button, files are automatically saved when moving to the next/previous file and when exiting the application.
 
 The application can also be closed with the Ctrl+Q shortcut.
+
+**Transcription toolbar**:
+
+![Screen](/doc/image_info.png)
+
+Below is a bar with information about the current (displayed) scan file: its name and number in the series, and the total number of scans in the folder. On the right are the ‘A+’ and ‘A-’ buttons, which are used to adjust the font size in the text field. Between the scan file name and the font size adjustment buttons, there is a search field in the transcription. After entering the text you are looking for and pressing the Enter key, the application highlights the found occurrences of the text. You can also use the arrow button to start the search, and the button with the “x” symbol removes the highlights and clears the search field. The drop-down menu on the right allows you to change the language version of the interface. Currently, Polish and English versions are available.
+
+The second row of the toolbar contains buttons for reading the transcription aloud: “>” (read) starts reading, “■” stops it, and “||” means pause. The combo box allows you to select the reading language. The read aloud function uses the gTTS library and requires Internet access, so there may be a short wait before it starts.
+
+The ‘NER’, ‘BOX’ and ‘CLS’ buttons assist in verifying the transcription – due to the higher frequency of errors in proper names, they can be marked in the transcription text (‘NER’) and, for comparison, also on the scan (“BOX”). The ‘CLS’ button clears the markings. ‘LEG’ displays a legend with a description of the colours used to mark different categories of proper names (people, places, organisations).
+The ‘CSV’ button allows you to export the proper names found (in all scans of the current catalogue) to a CSV file.
+The ‘LOG’ button displays a list of all API calls along with their cost.  
+
   
-Reading a series of scans by the Gemini model:
+**Reading a series of scans** by the Gemini model:
 
 ![Screen](/doc/screen_scan_transcript_seria.png)
 
