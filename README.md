@@ -42,8 +42,6 @@ Above the text field in the right panel of the application, there's a bar with t
 
 **Main toolbar**:
 
-![Screen](/doc/toolbar.png)
-
 List of buttons:
 
   - Go to the first file
@@ -56,6 +54,8 @@ List of buttons:
   - Save the read text for all files in a TEI-XML file
   - Go to the next file
   - Go to the last file
+
+![Screen](/doc/toolbar.png)
 
 Below the list of buttons there is information with the name of the currently set prompt file, the buttons on the right allows you to change the prompt or edit prompt.
 
