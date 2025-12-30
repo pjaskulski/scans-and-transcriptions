@@ -1,6 +1,6 @@
 # Scans and Transcriptions
 
-Do you have a collection of scanned manuscripts or typescripts? Do you need a transcription? This simple desktop application makes using Gemini for this purpose easy. Once the transcriptions are complete, you can review, verify and correct them.
+Do you have a collection of scanned manuscripts or typescripts? Do you need a transcription? This simple **desktop** application makes using Gemini for this purpose easy. Once the transcriptions are complete, you can review, verify and correct them.
 
 The idea is simple: the user prepares a folder with scans of manuscripts, typescripts, and old prints, and the application uses various Gemini models to prepare transcriptions, assisting in their verification through visual comparison of scans and transcriptions, voice recordings, and named entity recognition (NER) in areas where errors are more likely to occur. Finally, you receive a folder with scans, transcription files in txt format, mp3 voice recordings, and metadata saved in json files.
 
@@ -82,41 +82,41 @@ The ‘LOG’ button displays a list of all API calls along with their cost.
 
 The file batch reading window displays all scan files in the directory. You can select which files Gemini will read. By default, those for which there is no text file with transcription yet, or only an empty file, are selected. Buttons at the bottom of the window allow you to select or deselect all scans and initiate the transcription process for the selected scans, during which a progress bar is displayed (processing multiple files can be time-consuming).
 
-Example of a typescript transcription:
+Example of a **typescript transcription**:
 
 ![Screen](/doc/typescript_example.jpg)
 
-Prompt editor:
+**Prompt editor**:
 
 ![Screen](/doc/prompt_editor.jpg)
 
-Highlighting of entity names in the transcription text:
+**Highlighting** of entity names in the transcription text:
 
 ![Screen](/doc/highlighting_entity_names.jpg)
 
-Transcription errors prepared by the LLM model often concern proper names; to make finding them easier, an experimental BOX function was prepared - for marking entity names in the scan. The names are marked with frames, and the name read by the model is placed above the frame. This allows you to quickly compare the name with the actual content of the scan. See the screenshot below.
+Transcription errors prepared by the LLM model often concern proper names; to make finding them easier, an experimental BOX function was prepared - for **marking entity names in the scan**. The names are marked with frames, and the name read by the model is placed above the frame. This allows you to quickly compare the name with the actual content of the scan. See the screenshot below.
 
 Automatic marking isn't perfect, so it's possible to adjust the created frames: by grabbing the frame with the left mouse button, you can move it, and you can also adjust the frame size—the lower right corner of the frame is a handle that allows you to resize it. The new position or size is automatically saved when you release the mouse button. However, it's important to remember that the main purpose of this feature is to indicate (even inaccurately) the position of the proper name for visual verification of transcription accuracy.
 
 ![Screen](/doc/entity_names_on_scan.jpg)
 
-Example of colour coding different categories of entity names (PERSON, LOC, ORG):
+Example of **colour coding** different categories of entity names (PERSON, LOC, ORG):
 
 ![Screen](/doc/entity_names_on_scan_2.jpg)
 
-In some scans, manual reading of text can be facilitated by image filters, the following filters are available: negative and contrast (the screenshot below shows the negative filter used):
+In some scans, manual reading of text can be facilitated by **image filters**, the following filters are available: negative and contrast (the screenshot below shows the negative filter used):
 
 ![Screen](/doc/screen_scan_transcript_filtr.jpg)
 
-An example of transcription of an 18th-century Polish old print:
+An example of transcription of an 18th-century Polish **old print**:
 
 ![Screen](/doc/screen_scan_transcript_print.jpg)
 
-API cost control for the current catalog:
+**API cost control** for the current catalog:
 
 ![Screen](/doc/cost_control.jpg)
 
-English language version:
+English **language version**:
 
 ![Screen](/doc/screen_english.jpg)
 
