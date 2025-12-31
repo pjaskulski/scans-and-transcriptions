@@ -2044,8 +2044,9 @@ Zwróć tylko listę tych danych bez żadnych dodatkowych komentarzy.
             # obliczanie skali tak, by obraz zajął całą szerokość (z małym marginesem 10px)
             self.scale = (canvas_w - 10) / self.original_image.width
 
-            # Ograniczenie, by skan nie był zbyt wielki przy małych plikach
-            if self.scale > 2.0: self.scale = 2.0
+            # ograniczenie, by skan nie był zbyt wielki przy małych plikach
+            if self.scale > 2.0:
+                self.scale = 2.0
 
             self.img_x, self.img_y = 0, 0
             self.redraw_image()
