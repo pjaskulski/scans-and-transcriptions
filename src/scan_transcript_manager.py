@@ -555,9 +555,42 @@ class ManuscriptEditor:
         if not self.file_pairs or self.is_transcribing:
             return
 
-        self.btn_verify.config(state="disabled", text="...")
-        img_path = self.file_pairs[self.current_index]['img']
+        # usuwanie dotychczasowych podświetleń
+        self.clear_all_annotations()
+
+        # aktualny tekst transkrypcji
         current_text = self.text_area.get(1.0, tk.END).strip()
+        current_checksum = self._calculate_checksum(current_text)
+
+        json_path = self._get_ner_json_path()
+
+        # próba wczytania metadanych z json
+        cache_checksum = ""
+        if json_path and os.path.exists(json_path):
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    cache_data = json.load(f)
+                    cache_checksum = cache_data.get("checksum")
+            except Exception as e:
+                print(e)
+
+        # jeżeli istnieje plik *.fix i suma kontrolna tekstu transkrypcji się nie zmieniła
+        # wczytywanie różnic z dysku
+        fix_path = os.path.splitext(self.file_pairs[self.current_index]['txt'])[0] + ".fix"
+        if os.path.exists(fix_path) and current_checksum == cache_checksum:
+            with open(fix_path, 'r', encoding='utf-8') as f:
+                fixed_text = f.read()
+                self._apply_diff(current_text, fixed_text)
+            return
+
+        # w innym przypadku- trzeba wywołać AI w celu anlizy
+         # wyszarzenie przycisku FIX
+        self.btn_verify.config(state="disabled", text="...")
+        # progress bar
+        self.progress_bar.pack(fill=X, pady=(0, 10), before=self.editor_frame)
+        self.progress_bar.start(10)
+
+        img_path = self.file_pairs[self.current_index]['img']
 
         threading.Thread(target=self._verify_worker, args=(img_path, current_text), daemon=True).start()
 
@@ -614,9 +647,17 @@ Pamiętaj o zasadach oznaczania niepewności:
                 self.root.after(0, lambda: self._apply_diff(original_text, fixed_text))
 
         except Exception as e:
+            self.root.after(0, self._verify_finished)
             print("Błąd weryfikacji" + f": {e}")
         finally:
-            self.root.after(0, lambda: self.btn_verify.config(state="normal", text="FIX"))
+            self.root.after(0, self._verify_finished)
+
+
+    def _verify_finished(self):
+        """ aktualizacja GUI po zakończeniu pracy wątku obsługującego próbę poprawienia transkrypcji  """
+        self.progress_bar.stop()
+        self.progress_bar.pack_forget()
+        self.btn_verify.config(state="normal", text="FIX")
 
 
     def _apply_diff(self, old_text, new_text):
@@ -1075,8 +1116,8 @@ Pamiętaj o zasadach oznaczania niepewności:
         # czyszczenie skanu
         self.canvas.delete("ner_box")
 
-        # czyszczenie podświetleń w tekście (NER + wyszukiwanie)
-        for tag in ["PERS", "LOC", "ORG", "search_highlight"]:
+        # czyszczenie podświetleń w tekście (NER + wyszukiwanie i różnice z funkcji fix)
+        for tag in ["PERS", "LOC", "ORG", "search_highlight", "diff_fix"]:
             self.text_area.tag_remove(tag, "1.0", tk.END)
 
         # resetowanie stanu przycisków
@@ -1175,11 +1216,6 @@ Pamiętaj o zasadach oznaczania niepewności:
         if not text or self.is_transcribing:
             return
 
-        self.btn_ner.config(state="disabled")
-
-        self.progress_bar.pack(fill=X, pady=(0, 10), before=self.editor_frame)
-        self.progress_bar.start(10)
-
         current_checksum = self._calculate_checksum(text)
         json_path = self._get_ner_json_path()
 
@@ -1204,6 +1240,11 @@ Pamiętaj o zasadach oznaczania niepewności:
                 print(self.t["msg_ner_metadata_error"] + f": {e}")
 
         # wywołanie AI jeżeli brak pliku json z metadanymi
+        # wyszarzenie przycisku NER , włączenie paska pastępu
+        self.btn_ner.config(state="disabled")
+        self.progress_bar.pack(fill=X, pady=(0, 10), before=self.editor_frame)
+        self.progress_bar.start(10)
+
         # suma kontrolna przekazywana do wątku, w celu zapisu w json po analizie AI
         thread = threading.Thread(target=self._ner_worker,
                                   args=(text, current_checksum), daemon=True)
@@ -1426,7 +1467,12 @@ Zwróć wynik WYŁĄCZNIE jako JSON w formacie:
                 print(e)
 
         # brak metadanych - wywołanie AI
+        # wyszarzenie przycisku BOX
         self.btn_box.config(state="disabled", text="..." )
+        # progress bar
+        self.progress_bar.pack(fill=X, pady=(0, 10), before=self.editor_frame)
+        self.progress_bar.start(10)
+
         threading.Thread(target=self._box_worker, args=(current_checksum,), daemon=True).start()
 
 
@@ -1503,8 +1549,16 @@ Zwróć tylko listę tych danych bez żadnych dodatkowych komentarzy.
 
         except Exception as e:
             print(self.t["msg_box_error"] + f": {e}")
+            self.root.after(0, self._box_finished)
         finally:
-            self.root.after(0, lambda: self.btn_box.config(state="normal", text="BOX"))
+            self.root.after(0, self._box_finished)
+
+
+    def _box_finished(self):
+        """ aktualizacja GUI po zakończeniu pracy wątku obsługującego wyszukiwanie nazw na skanie  """
+        self.progress_bar.stop()
+        self.progress_bar.pack_forget()
+        self.btn_box.config(state="normal", text="BOX")
 
 
     def _draw_boxes_only(self, entities_data):
