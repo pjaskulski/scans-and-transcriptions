@@ -162,7 +162,8 @@
         "msg_on_close_title": "Niezapisane zmiany",
         "msg_on_close_text": "Wprowadzone zmiany nie zostały zapisane. Czy na pewno chcesz zamknąć okno i utracić zmiany?",
         "btn_save_prompt": "Zapisz",
-        "btn_restore_prompt": "Przywróć z pliku"
+        "btn_restore_prompt": "Przywróć z pliku",
+        "msg_audio_gen": "Brak pliku audio dla transkrypcji. Uruchomić generowanie?"
     },
     "EN": {
         "lang_name": "English",
@@ -327,6 +328,7 @@
         "msg_on_close_title": "Unsaved changes",
         "msg_on_close_text": "The changes you have made have not been saved. Are you sure you want to close the window and lose your changes?",
         "btn_save_prompt": "Save",
-        "btn_restore_prompt": "Restore from file"
+        "btn_restore_prompt": "Restore from file",
+        "msg_audio_gen": "No audio file for transcription. Start generating?"
     }
 }

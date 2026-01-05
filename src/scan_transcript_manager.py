@@ -6,6 +6,7 @@ import csv
 import threading
 import hashlib
 import difflib
+import wave
 from datetime import datetime
 from pathlib import Path
 import xml.sax.saxutils as saxutils
@@ -20,8 +21,8 @@ from docx import Document
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from gtts import gTTS
 from just_playback import Playback
+from pydub import AudioSegment
 
 
 # ------------------------------- CLASS ----------------------------------------
@@ -85,8 +86,7 @@ class ToolTip:
 class ManuscriptEditor:
     """ główna klasa aplikacji """
     def __init__(self, root):
-        self.current_lang = "PL" # domyślny język
-        self.current_tts_lang_code = "pl" # domyślny język audio
+        self.current_lang = "PL" # domyślny język UI
         self.localization = {} # słownik wersji językowych
         self.local_file = "localization.json"
         self.languages = []
@@ -115,19 +115,8 @@ class ManuscriptEditor:
             "gemini-3-pro-preview": (2.0, 12.0),
             "gemini-3-flash-preview": (0.5, 3.0),
             "gemini-3-pro-image-preview": (2.0, 12.0),
-            "gemini-flash-latest": (0.3, 2.5)
-        }
-
-        # języki TTS
-        self.tts_languages = {
-            self.t["tts_pl"]: "pl",
-            self.t["tts_la"]: "la",
-            self.t["tts_en"]: "en",
-            self.t["tts_de"]: "de",
-            self.t["tts_fr"]: "fr",
-            self.t["tts_es"]: "es",
-            self.t["tts_pt"]: "pt",
-            self.t["tts_ru"]: "ru"
+            "gemini-flash-latest": (0.3, 2.5),
+            "gemini-2.5-flash-preview-tts": (0.5, 10.0)
         }
 
         self.file_pairs = []
@@ -349,18 +338,6 @@ class ManuscriptEditor:
         tts_tools = ttk.Frame(self.header_row2)
         tts_tools.pack(side=RIGHT)
 
-        self.lang_combobox = ttk.Combobox(tts_tools, values=list(self.tts_languages.keys()),
-                                          state="readonly", width=10, bootstyle="info")
-        # ustawienie wartości początkowej na podstawie kodu (np. 'pl' -> 'Polski')
-        initial_lang_name = [k for k, v in self.tts_languages.items() if v == self.current_tts_lang_code]
-        if initial_lang_name:
-            self.lang_combobox.set(initial_lang_name[0])
-        else:
-            self.lang_combobox.set(self.t["tts_pl"])
-
-        self.lang_combobox.bind("<<ComboboxSelected>>", self.change_tts_language)
-        self.lang_combobox.pack(side=LEFT, padx=2)
-
         self.btn_speak = ttk.Button(tts_tools, text=">", command=self.read_text_aloud,
                                     bootstyle="info-outline", width=3, padding=2)
         self.btn_speak.pack(side=LEFT, padx=2)
@@ -545,7 +522,6 @@ class ManuscriptEditor:
         self.btn_smfont_tooltip = ToolTip(self.btn_smfont, self.t["tt_btn_smfont"])
         self.btn_search_tooltip = ToolTip(self.btn_search, self.t["tt_btn_search"])
         self.btn_cancelsearch_tooltip = ToolTip(self.btn_cancelsearch, self.t["tt_btn_cancelsearch"])
-        self.lang_combobox_tooltip = ToolTip(self.lang_combobox, self.t["tt_lang_combobox"])
 
         self.select_folder()
 
@@ -823,17 +799,6 @@ Pamiętaj o zasadach oznaczania niepewności:
     def update_ui_text(self):
         """odświeżnie tekstów we wszystkich widżetach po zmianie języka"""
 
-        self.tts_languages = {
-            self.t["tts_pl"]: "pl",
-            self.t["tts_la"]: "la",
-            self.t["tts_en"]: "en",
-            self.t["tts_de"]: "de",
-            self.t["tts_fr"]: "fr",
-            self.t["tts_es"]: "es",
-            self.t["tts_pt"]: "pt",
-            self.t["tts_ru"]: "ru"
-        }
-
         self.root.title(self.t["title"])
 
         self.lbl_left_tools.config(text=self.t["left_tools"])
@@ -880,7 +845,6 @@ Pamiętaj o zasadach oznaczania niepewności:
         self.btn_smfont_tooltip.update_text(self.t["tt_btn_smfont"])
         self.btn_search_tooltip.update_text(self.t["tt_btn_search"])
         self.btn_cancelsearch_tooltip.update_text(self.t["tt_btn_cancelsearch"])
-        self.lang_combobox_tooltip.update_text(self.t["tt_lang_combobox"])
 
 
     def show_usage_log(self):
@@ -1788,14 +1752,6 @@ Zwróć tylko listę tych danych bez żadnych dodatkowych komentarzy.
         return "break" # blokada ruchu skanu
 
 
-    def change_tts_language(self, event):
-        """ zmienia język TTS na podstawie wyboru z listy """
-        selected_name = self.lang_combobox.get()
-        if selected_name in self.tts_languages:
-            self.current_tts_lang_code = self.tts_languages[selected_name]
-            self.save_config()
-
-
     def pause_reading(self):
         """ obsługa wstrzymywania i wznawiania odtwarzania """
         if self.playback.active:
@@ -1806,18 +1762,24 @@ Zwróć tylko listę tych danych bez żadnych dodatkowych komentarzy.
                 self.playback.pause()
                 self.btn_pause.config(text=">")
 
+
     def read_text_aloud(self):
         """ przygotowanie tekstu i uruchamienie wątku TTS """
-        try:
-            text_to_read = self.text_area.get(tk.SEL_FIRST, tk.SEL_LAST).strip()
-        except tk.TclError:
-            text_to_read = self.text_area.get(1.0, tk.END).strip()
+        text_to_read = self.text_area.get(1.0, tk.END).strip()
 
         if not text_to_read:
             return
 
         if self.is_reading_audio:
             self.stop_reading()
+
+        pair = self.file_pairs[self.current_index]
+        mp3_path = os.path.splitext(pair['img'])[0] + ".mp3"
+        if not os.path.exists(mp3_path):
+            if not messagebox.askyesno("Audio",
+                                       self.t["msg_audio_gen"],
+                                       parent=self.root):
+                return
 
         self.is_reading_audio = True
         self.btn_speak.config(state="disabled")
@@ -1827,13 +1789,33 @@ Zwróć tylko listę tych danych bez żadnych dodatkowych komentarzy.
         threading.Thread(target=self._tts_worker, args=(text_to_read,), daemon=True).start()
 
 
+    def wave_file(self, filename, pcm, channels=1, rate=24000, sample_width=2):
+        """ zapis pliku WAV """
+        with wave.open(filename, "wb") as wf:
+            wf.setnchannels(channels)     # pylint: disable=E1101
+            wf.setsampwidth(sample_width) # pylint: disable=E1101
+            wf.setframerate(rate)         # pylint: disable=E1101
+            wf.writeframes(pcm)           # pylint: disable=E1101
+
+
+    def convert_wav_to_mp3(self, input_file, output_file):
+        """ konwersja WAV na MP3 """
+        audio = AudioSegment.from_raw(
+            input_file,
+            sample_width=2,
+            frame_rate=24000,
+            channels=1
+        )
+
+        audio.export(output_file, format="mp3", bitrate="128k")
+
+
     def _tts_worker(self, text):
         """ kod wykonywany w wątku - tworzenie audio i start odtwarzania,
-            jeżeli aktualnhy plik audio jest w pliku, odtwarzanie z pliku bez
+            jeżeli aktualny plik audio jest w pliku, odtwarzanie z pliku bez
             nowego generowania
         """
         try:
-            lang_to_use = self.current_tts_lang_code
             current_checksum = self._calculate_checksum(text)
 
             # ścieżki
@@ -1856,8 +1838,42 @@ Zwróć tylko listę tych danych bez żadnych dodatkowych komentarzy.
 
             # generowanie pliku tylko jeśli to konieczne
             if needs_generation:
-                tts = gTTS(text=text, lang=lang_to_use)
-                tts.save(mp3_path)
+
+                wav_path = os.path.splitext(pair['img'])[0] + ".wav"
+
+                client = genai.Client()
+                model="gemini-2.5-flash-preview-tts"
+
+                prompt = """Przeczytaj uważnie podany dalej tekst. Odczytuj dokładnie,
+oddając oryginalne brzmienie także słów archaicznych.
+Tekst:
+"""
+
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt + text,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["AUDIO"],
+                        speech_config=types.SpeechConfig(
+                            voice_config=types.VoiceConfig(
+                                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                voice_name='Enceladus',
+                                )
+                            )
+                        ),
+                    )
+                )
+
+                data = response.candidates[0].content.parts[0].inline_data.data
+
+                self.wave_file(wav_path, data)
+                self.convert_wav_to_mp3(wav_path, mp3_path)
+                os.remove(wav_path)
+
+                # zapis kosztów w logu
+                if response.usage_metadata:
+                    self.root.after(0, lambda: self._log_api_usage(model, response.usage_metadata))
+
                 # zapis nową sumę kontrolną audio w JSON
                 self._save_ner_cache(tts_checksum=current_checksum)
 
@@ -1873,6 +1889,13 @@ Zwróć tylko listę tych danych bez żadnych dodatkowych komentarzy.
         except Exception as e:
             print(self.t["msg_tts_error"] + f": {e}")
             self.root.after(0, self.stop_reading)
+
+
+    def _tts_finished(self):
+        """ aktualizacja GUI po zakończeniu pracy wątku TTS """
+        self.progress_bar.stop()
+        self.progress_bar.pack_forget()
+        self.btn_ner.config(state="normal")
 
 
     def _check_audio_status(self):
@@ -1960,13 +1983,11 @@ Zwróć tylko listę tych danych bez żadnych dodatkowych komentarzy.
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = json.load(f)
                 config["font_size"] = self.font_size
-                config["tts_lang"] = self.current_tts_lang_code
                 config["current_lang"] = self.current_lang
                 config["default_prompt"] = self.default_prompt
         else:
             config = {
                 "font_size": self.font_size,
-                "tts_lang": self.current_tts_lang_code,
                 "current_lang": self.current_lang,
                 "default_prompt": self.default_prompt,
                 "api_key": ""
