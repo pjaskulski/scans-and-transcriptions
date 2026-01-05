@@ -6,7 +6,7 @@ The idea is simple: the user prepares a folder with scans of manuscripts, typesc
 
 Since the application uses models via API, their use is subject to a fee, in accordance with Google's current [price list](https://ai.google.dev/gemini-api/docs/pricing). 
 
-The Gemini Pro 3 model is used for transcription, the Gemini Flash model is used for searching for proper names, and the Gemini Pro 3 Image model (also known as Nano Banana Pro) is used for locating proper names on a scan.  The application can prepare transcriptions for a single image or a series of files. The Gemini API key should be stored in the `.env` file as the `GEMINI_API_KEY` environment variable (or in the `config/config.json` file under the `api_key` field).
+The Gemini Pro 3 model is used for transcription and for searching for proper names, the Gemini Flash 2.5 TTS model is used to generate audio recordings (tts), and the Gemini Pro 3 Image model (also known as Nano Banana Pro) is used for locating proper names on a scan.  The application can prepare transcriptions for a single image or a series of files. The Gemini API key should be stored in the `.env` file as the `GEMINI_API_KEY` environment variable (or in the `config/config.json` file under the `api_key` field).
 
 ## Application Features:
 
@@ -17,7 +17,7 @@ The Gemini Pro 3 model is used for transcription, the Gemini Flash model is used
   - Transcriptions can be saved in a **bulk txt file** or in a **docx file**. For docx files, the application also concatenates broken words and lines into paragraphs. Transcriptions can also be saved in **TEI-XML** format. 
   - To facilitate verification of transcription accuracy, the application allows you to pan the scan (left mouse button), **zoom in/out** (mouse scroll wheel), and display a **magnifying glass** window at a selected location (right mouse button). 
   - Simple **filters** can be applied to scans: contrast enhancement and image inversion.
-  - A feature that aids verification is the ability to **read the transcript aloud (TTS reader)**, this feature requires internet access.
+  - A feature that aids verification is the ability to **read the transcript aloud**, this feature, like transcritions, requires internet access (Gemini TTS model is used).
   - Ability to adjust the font size in the transcription field.
   - Due to the fact that transcription errors quite often appear in proper names (people, places, institutions), the option to **highlight** such words (**NER** button) has been added so that special attention can be paid to them during transcription verification. Experimental function (BOX button) for **automatic marking entity names in the scan**. The names are marked with frames, and the name from transcription is placed above the frame, for quick assessment of transcription accuracy. The frames for entity names can be adjusted in terms of size and position. The list of found **entity names can be exported to a CSV file** for further use.
   - The application **records the cost of all API calls** for the current catalog, with information about the date, name of the model used, number of tokens used (input, output), cost of the call, and summarizes the cost for the entire current scan catalog.
@@ -69,11 +69,12 @@ The application can also be closed with the Ctrl+Q shortcut.
 
 Below is a bar with information about the current (displayed) scan file: its name and number in the series, and the total number of scans in the folder. On the right are the ‘A+’ and ‘A-’ buttons, which are used to adjust the font size in the text field. Between the scan file name and the font size adjustment buttons, there is a search field in the transcription. After entering the text you are looking for and pressing the Enter key, the application highlights the found occurrences of the text. You can also use the arrow button to start the search, and the button with the “x” symbol removes the highlights and clears the search field. The drop-down menu on the right allows you to change the language version of the interface. Currently, Polish and English versions are available.
 
-The second row of the toolbar contains buttons for reading the transcription aloud: “>” (read) starts reading, “■” stops it, and “||” means pause. The combo box allows you to select the reading language. The read aloud function uses the gTTS library and requires Internet access, so there may be a short wait before it starts.
+The second row of the toolbar contains buttons for reading the transcription aloud: “>” (read) starts reading, “■” stops it, and “||” means pause. The Gemini TTS model supports 24 languages and automatically recognises the transcription language.
 
 The ‘NER’, ‘BOX’ and ‘CLS’ buttons assist in verifying the transcription – due to the higher frequency of errors in proper names, they can be marked in the transcription text (‘NER’) and, for comparison, also on the scan (“BOX”). The ‘CLS’ button clears the markings. ‘LEG’ displays a legend with a description of the colours used to mark different categories of proper names (people, places, organisations).
 The ‘CSV’ button allows you to export the proper names found (in all scans of the current catalogue) to a CSV file.
-The ‘LOG’ button displays a list of all API calls along with their cost.  
+The ‘LOG’ button displays a list of all API calls along with their cost.
+The “FIX” button activates an experimental feature that verifies the existing transcription, highlighting sections that may contain errors. The verification uses the same Gemini model as the original transcription.
 
   
 **Reading a series of scans** by the Gemini model:
