@@ -160,5 +160,5 @@ GEMINI_API_KEY=your_key_here
 
 **Prompts**: The content of the instructions for the AI model (prompts) should be located in .txt files in the ../prompt/ subdirectory. This directory already contains sample prompts.
 
-**Settings**: The application stores preferences (font size, TTS reader language) in the config.json file. You can also save your API key in the ‘api_key’ field in this file. The application first looks for the GEMINI_API_KEY environment variable, and if it is not found, it tries to load the key from the config.json file.
+**Settings**: The application stores preferences (font size, user interface language) in the config.json file. You can also save your API key in the ‘api_key’ field in this file. The application first looks for the GEMINI_API_KEY environment variable, and if it is not found, it tries to load the key from the config.json file.
 
