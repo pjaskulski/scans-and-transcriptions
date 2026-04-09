@@ -1,11 +1,23 @@
 import json
 import os
+from json import JSONDecodeError
 from typing import Tuple
 
 from dotenv import load_dotenv
 
 from app.models import AppConfig
 from app.paths import config_file, localization_file
+
+
+def _load_json_file(path):
+    if not path.exists() or path.stat().st_size == 0:
+        return {}
+
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except JSONDecodeError:
+        return {}
 
 
 def load_localization(filename: str = "localization.json") -> Tuple[dict, list[str]]:
@@ -21,11 +33,7 @@ def load_localization(filename: str = "localization.json") -> Tuple[dict, list[s
 
 def load_app_config(filename: str = "config.json") -> AppConfig:
     path = config_file(filename)
-    if not path.exists():
-        return AppConfig()
-
-    with path.open("r", encoding="utf-8") as handle:
-        data = json.load(handle)
+    data = _load_json_file(path)
 
     return AppConfig(
         font_size=data.get("font_size", 12),
@@ -38,11 +46,7 @@ def load_app_config(filename: str = "config.json") -> AppConfig:
 
 def save_app_config(app_config: AppConfig, filename: str = "config.json") -> None:
     path = config_file(filename)
-    data = {}
-
-    if path.exists():
-        with path.open("r", encoding="utf-8") as handle:
-            data = json.load(handle)
+    data = _load_json_file(path)
 
     data["font_size"] = app_config.font_size
     data["current_lang"] = app_config.current_lang

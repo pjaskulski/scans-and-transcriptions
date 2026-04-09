@@ -1461,7 +1461,7 @@ class ManuscriptEditor:
         try:
             self.localization, self.languages = load_localization(self.local_file)
         except Exception as e:
-            print(self.t["msg_lang_file_error"] + f": {e}")
+            print(f"Blad wczytywania pliku jezykowego: {e}")
 
 
     def load_config(self):
@@ -1475,7 +1475,7 @@ class ManuscriptEditor:
             if not self.api_key:
                 self.api_key = config.api_key
         except Exception as e:
-            print(self.t["msg_config_file_error"] + f": {e}")
+            print(f"Blad wczytywania pliku konfiguracyjnego: {e}")
 
 
     def save_config(self):
