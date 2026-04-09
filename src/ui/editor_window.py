@@ -15,7 +15,7 @@ from app.models import AppConfig
 from app.paths import fix_for_text, mp3_for_image, prompt_file, prompts_dir
 from services.audio_service import audio_needs_generation, generate_mp3_from_text
 from services.cache_service import calculate_checksum, get_ner_json_path, load_cache, save_cache
-from services.config_service import load_api_key_from_env, load_app_config, load_localization, save_app_config
+from services.config_service import load_app_config, load_localization, save_app_config
 from services.export_service import (
     collect_ner_rows,
     export_docx,
@@ -25,6 +25,10 @@ from services.export_service import (
     write_ner_csv,
 )
 from services.gemini_service import (
+    DEFAULT_ANALYSIS_MODEL,
+    DEFAULT_BOX_MODEL,
+    DEFAULT_HTR_MODEL,
+    DEFAULT_TTS_MODEL,
     build_nominative_map,
     extract_entities,
     locate_entities,
@@ -37,11 +41,11 @@ from services.text_service import build_diff_ranges, prepare_text_for_tei, tag_e
 from services.usage_log_service import append_usage_log, read_usage_log
 from ui.batch_controller import BatchController
 from ui.canvas_controller import CanvasController
-from ui.dialogs import edit_current_prompt as open_prompt_editor_dialog, open_batch_dialog as open_batch_dialog_window
-
-
-MODEL_HTR_OCR = "gemini-3-pro-preview"
-
+from ui.dialogs import (
+    edit_current_prompt as open_prompt_editor_dialog,
+    open_batch_dialog as open_batch_dialog_window,
+    open_settings_dialog as open_settings_dialog_window,
+)
 
 # ------------------------------- CLASS ----------------------------------------
 class ToolTip:
@@ -112,6 +116,10 @@ class ManuscriptEditor:
 
         self.api_key = ""
         self.default_prompt = ""
+        self.htr_model = DEFAULT_HTR_MODEL
+        self.analysis_model = DEFAULT_ANALYSIS_MODEL
+        self.box_model = DEFAULT_BOX_MODEL
+        self.tts_model = DEFAULT_TTS_MODEL
         self.prompt_text = ""
         self.prompt_filename_var = tk.StringVar(value="Brak (wybierz plik)")
         self.current_folder_var = tk.StringVar(value="Nie wybrano katalogu")
@@ -130,12 +138,12 @@ class ManuscriptEditor:
         self.root.geometry("1600x900")
 
         self.MODEL_PRICES = {
-            "gemini-3-pro-preview": (2.0, 12.0),
-            "gemini-3.1-pro-preview":(2.0, 12.0),
+            "gemini-3.1-pro-preview": (2.0, 12.0),
             "gemini-3-flash-preview": (0.5, 3.0),
+            "gemini-3.1-flash-lite-preview": (0.25, 1.5),
             "gemini-3-pro-image-preview": (2.0, 12.0),
-            "gemini-flash-latest": (0.3, 2.5),
-            "gemini-2.5-flash-preview-tts": (0.5, 10.0)
+            "gemini-3.1-flash-image-preview": (0.5, 3.0),
+            "gemini-2.5-flash-preview-tts": (0.5, 10.0),
         }
 
         self.file_pairs = []
@@ -271,6 +279,16 @@ class ManuscriptEditor:
                                        command=self.select_folder,
                                        bootstyle="link-secondary",
                                        cursor="hand2", padding=0)
+
+        self.btn_settings = ttk.Button(
+            self.folder_status_frame,
+            text=self.t["btn_settings"],
+            command=self.open_settings_dialog,
+            bootstyle="link-info",
+            cursor="hand2",
+            padding=0,
+        )
+        self.btn_settings.pack(side=RIGHT, padx=(0, 8))
         self.btn_folder_change.pack(side=RIGHT)
 
         # ramka na tekst
@@ -553,6 +571,7 @@ class ManuscriptEditor:
         self.btn_search_tooltip = ToolTip(self.btn_search, self.t["tt_btn_search"])
         self.btn_cancelsearch_tooltip = ToolTip(self.btn_cancelsearch, self.t["tt_btn_cancelsearch"])
         self.btn_new_prompt_tooltip = ToolTip(self.btn_new_prompt, self.t["tt_btn_new_prompt"])
+        self.btn_settings_tooltip = ToolTip(self.btn_settings, self.t["tt_btn_settings"])
 
         self.select_folder()
 
@@ -620,6 +639,9 @@ class ManuscriptEditor:
                 self._apply_diff(current_text, fixed_text)
             return
 
+        if not self.ensure_api_key():
+            return
+
         # w innym przypadku- trzeba wywołać AI w celu anlizy
          # wyszarzenie przycisku FIX
         self.btn_verify.config(state="disabled", text="...")
@@ -634,7 +656,12 @@ class ManuscriptEditor:
 
     def _verify_worker(self, img_path, original_text):
         try:
-            model, response = verify_transcription(self.api_key, img_path, original_text)
+            model, response = verify_transcription(
+                self.api_key,
+                img_path,
+                original_text,
+                model_name=self.htr_model,
+            )
 
             if response.usage_metadata:
                 self.root.after(0, lambda: self._log_api_usage(model, response.usage_metadata))
@@ -742,6 +769,7 @@ class ManuscriptEditor:
         self.btn_save.config(text=self.t["btn_save"])
         self.lbl_folder_status.config(text=self.t["folder_path"])
         self.btn_folder_change.config(text=self.t["btn_folder_change"])
+        self.btn_settings.config(text=self.t["btn_settings"])
         self.btn_seria.config(text=self.t["btn_batch"])
         self.btn_prompt_change.config(text=self.t["btn_prompt"])
         self.btn_edit_prompt.config(text=self.t["btn_edit_prompt"])
@@ -776,6 +804,7 @@ class ManuscriptEditor:
         self.btn_search_tooltip.update_text(self.t["tt_btn_search"])
         self.btn_cancelsearch_tooltip.update_text(self.t["tt_btn_cancelsearch"])
         self.btn_new_prompt_tooltip.update_text(self.t["tt_btn_new_prompt"])
+        self.btn_settings_tooltip.update_text(self.t["tt_btn_settings"])
 
 
     def show_usage_log(self):
@@ -832,6 +861,9 @@ class ManuscriptEditor:
         if not self.file_pairs:
             return
 
+        if not self.ensure_api_key():
+            return
+
         target_path = filedialog.asksaveasfilename(
             title=self.t["file_dialog_csv"],
             defaultextension=".csv",
@@ -861,7 +893,11 @@ class ManuscriptEditor:
     def _ner_export_worker(self, names_list, full_records, target_path):
         """ wątek AI: mianownik + zapis 5 kolumn do CSV """
         try:
-            nominative_map, usage_entries = build_nominative_map(self.api_key, names_list)
+            nominative_map, usage_entries = build_nominative_map(
+                self.api_key,
+                names_list,
+                model_name=self.analysis_model,
+            )
             for model, usage_metadata in usage_entries:
                 self._log_api_usage(model, usage_metadata)
 
@@ -1073,6 +1109,9 @@ class ManuscriptEditor:
             except Exception as e:
                 print(self.t["msg_ner_metadata_error"] + f": {e}")
 
+        if not self.ensure_api_key():
+            return
+
         # wywołanie AI jeżeli brak pliku json z metadanymi
         # wyszarzenie przycisku NER , włączenie paska pastępu
         self.btn_ner.config(state="disabled")
@@ -1090,7 +1129,7 @@ class ManuscriptEditor:
             osoby, miejsca, instytucje """
         try:
             print('NER: generowanie wyników')
-            model, response = extract_entities(self.api_key, text)
+            model, response = extract_entities(self.api_key, text, model_name=self.analysis_model)
 
             if response.usage_metadata:
                 self._log_api_usage(model, response.usage_metadata)
@@ -1238,6 +1277,9 @@ class ManuscriptEditor:
             except Exception as e:
                 print(e)
 
+        if not self.ensure_api_key():
+            return
+
         # brak metadanych - wywołanie AI
         # wyszarzenie przycisku BOX
         self.btn_box.config(state="disabled", text="..." )
@@ -1257,7 +1299,12 @@ class ManuscriptEditor:
                 for name in names:
                     entities_to_find.append((name, cat))
 
-            model, response = locate_entities(self.api_key, current_pair['img'], entities_to_find)
+            model, response = locate_entities(
+                self.api_key,
+                current_pair['img'],
+                entities_to_find,
+                model_name=self.box_model,
+            )
 
             if response.usage_metadata:
                 self._log_api_usage(model, response.usage_metadata)
@@ -1353,6 +1400,15 @@ class ManuscriptEditor:
                                        parent=self.root):
                 return
 
+        try:
+            needs_generation = audio_needs_generation(pair['img'], self._get_ner_json_path(), self._calculate_checksum(text_to_read))
+        except Exception as e:
+            print(self.t["msg_tts_cache_error"] + f": {e}")
+            needs_generation = True
+
+        if needs_generation and not self.ensure_api_key():
+            return
+
         self.is_reading_audio = True
         self.btn_speak.config(state="disabled")
         self.btn_pause.config(state="disabled", text="||")
@@ -1390,7 +1446,12 @@ class ManuscriptEditor:
             if needs_generation:
                 self.root.after(0, self._show_tts_progress)
                 print(self.t["msg_gen_mp3"])
-                model, response, mp3_path = generate_mp3_from_text(self.api_key, text, pair['img'])
+                model, response, mp3_path = generate_mp3_from_text(
+                    self.api_key,
+                    text,
+                    pair['img'],
+                    model_name=self.tts_model,
+                )
 
                 print("TTS: wygenerowano")
 
@@ -1472,6 +1533,10 @@ class ManuscriptEditor:
             self.current_tts_lang_code = config.tts_lang
             self.current_lang = config.current_lang
             self.default_prompt = config.default_prompt
+            self.htr_model = config.htr_model
+            self.analysis_model = config.analysis_model
+            self.box_model = config.box_model
+            self.tts_model = config.tts_model
             if not self.api_key:
                 self.api_key = config.api_key
         except Exception as e:
@@ -1481,13 +1546,18 @@ class ManuscriptEditor:
     def save_config(self):
         """ zapisywanie ustawienia do pliku JSON """
         try:
+            existing_config = load_app_config(self.config_file)
             save_app_config(
                 AppConfig(
                     font_size=self.font_size,
                     current_lang=self.current_lang,
                     default_prompt=self.default_prompt,
-                    api_key=self.api_key,
+                    api_key=existing_config.api_key,
                     tts_lang=getattr(self, "current_tts_lang_code", "pl"),
+                    htr_model=getattr(self, "htr_model", existing_config.htr_model),
+                    analysis_model=getattr(self, "analysis_model", existing_config.analysis_model),
+                    box_model=getattr(self, "box_model", existing_config.box_model),
+                    tts_model=getattr(self, "tts_model", existing_config.tts_model),
                 ),
                 self.config_file,
             )
@@ -1523,9 +1593,6 @@ class ManuscriptEditor:
 
     def _init_environment(self):
         """ ładowanie zmiennych środowiskowych i promptu """
-        if not self.api_key:
-            self.api_key = load_api_key_from_env()
-
         if self.default_prompt:
             self.prompt_filename_var.set(self.default_prompt)
         else:
@@ -1917,7 +1984,12 @@ class ManuscriptEditor:
 
     def _call_gemini_api(self, image_path):
         """ wspólna funkcja wołająca API, zwraca tekst transkrypcji """
-        model, response = transcribe_image(self.api_key, self.prompt_text, image_path)
+        model, response = transcribe_image(
+            self.api_key,
+            self.prompt_text,
+            image_path,
+            model_name=self.htr_model,
+        )
 
         if response.usage_metadata:
             self._log_api_usage(model, response.usage_metadata)
@@ -1936,11 +2008,17 @@ class ManuscriptEditor:
                                  parent=self.root)
             return
 
-        if not self.api_key:
-            messagebox.showerror(self.t["apikey_config_error1"],
-                                 self.t["apikey_config_error2"],
-                                 parent=self.root)
+        if not self.ensure_api_key():
             return
+
+        current_text = self.text_area.get(1.0, tk.END).strip()
+        if current_text:
+            if not messagebox.askyesno(
+                self.t["msg_overwrite_transcription_title"],
+                self.t["msg_overwrite_transcription_text"],
+                parent=self.root,
+            ):
+                return
 
         # blokada interfejsu
         self.is_transcribing = True
@@ -1961,10 +2039,15 @@ class ManuscriptEditor:
     def _single_worker(self, image_path):
         """ wątek dla pojedynczego pliku z obsługą strumieniowania """
         try:
-            model, stream = stream_transcribe_image(self.api_key, self.prompt_text, image_path)
+            model, stream = stream_transcribe_image(
+                self.api_key,
+                self.prompt_text,
+                image_path,
+                model_name=self.htr_model,
+            )
 
             # czyszczenie pola tekstowego przed startem strumienia (w wątku głównym)
-            self.root.after(0, lambda: self.text_area.delete(1.0, tk.END))
+            self.root.after(0, self._clear_text_for_transcription)
 
             # iteracja po strumieniu odpowiedzi
             loop_usage_metadata = None
@@ -1989,6 +2072,13 @@ class ManuscriptEditor:
         self.text_area.insert(tk.END, text)
         self.text_area.see(tk.END)
         self.text_area.config(state="disabled") # blokada powraca na czas trwania procesu
+
+
+    def _clear_text_for_transcription(self):
+        """Czyści pole tekstowe przed rozpoczęciem nowej transkrypcji."""
+        self.text_area.config(state="normal")
+        self.text_area.delete(1.0, tk.END)
+        self.text_area.config(state="disabled")
 
 
     def _single_finished(self, success, content):
@@ -2016,6 +2106,25 @@ class ManuscriptEditor:
     def edit_current_prompt(self):
         """ Otwiera okno edycji aktualnego promptu """
         open_prompt_editor_dialog(self)
+
+
+    def ensure_api_key(self):
+        """Sprawdza, czy klucz API jest dostępny; w razie braku otwiera ustawienia."""
+        if self.api_key:
+            return True
+
+        messagebox.showinfo(
+            self.t["apikey_config_error1"],
+            self.t["apikey_config_error2"],
+            parent=self.root,
+        )
+        self.open_settings_dialog()
+        return bool(self.api_key)
+
+
+    def open_settings_dialog(self):
+        """ Otwiera okno ustawień aplikacji """
+        open_settings_dialog_window(self)
 
 
 # ----------------------------------- MAIN -------------------------------------

@@ -1,12 +1,16 @@
 import json
-import os
 from json import JSONDecodeError
 from typing import Tuple
 
-from dotenv import load_dotenv
-
 from app.models import AppConfig
 from app.paths import config_file, localization_file
+from services.gemini_service import (
+    DEFAULT_ANALYSIS_MODEL,
+    DEFAULT_BOX_MODEL,
+    DEFAULT_HTR_MODEL,
+    DEFAULT_TTS_MODEL,
+    normalize_model_selection,
+)
 
 
 def _load_json_file(path):
@@ -41,6 +45,12 @@ def load_app_config(filename: str = "config.json") -> AppConfig:
         default_prompt=data.get("default_prompt", "prompt_handwritten_pol_xx_century.txt"),
         api_key=data.get("api_key", ""),
         tts_lang=data.get("tts_lang", "pl"),
+        htr_model=normalize_model_selection("htr", data.get("htr_model", DEFAULT_HTR_MODEL)),
+        analysis_model=normalize_model_selection(
+            "analysis", data.get("analysis_model", DEFAULT_ANALYSIS_MODEL)
+        ),
+        box_model=normalize_model_selection("box", data.get("box_model", DEFAULT_BOX_MODEL)),
+        tts_model=normalize_model_selection("tts", data.get("tts_model", DEFAULT_TTS_MODEL)),
     )
 
 
@@ -52,12 +62,11 @@ def save_app_config(app_config: AppConfig, filename: str = "config.json") -> Non
     data["current_lang"] = app_config.current_lang
     data["default_prompt"] = app_config.default_prompt
     data["tts_lang"] = app_config.tts_lang
-    data.setdefault("api_key", app_config.api_key or "")
+    data["api_key"] = app_config.api_key or ""
+    data["htr_model"] = normalize_model_selection("htr", app_config.htr_model)
+    data["analysis_model"] = normalize_model_selection("analysis", app_config.analysis_model)
+    data["box_model"] = normalize_model_selection("box", app_config.box_model)
+    data["tts_model"] = normalize_model_selection("tts", app_config.tts_model)
 
     with path.open("w", encoding="utf-8") as handle:
         json.dump(data, handle)
-
-
-def load_api_key_from_env() -> str:
-    load_dotenv()
-    return os.environ.get("GEMINI_API_KEY", "")

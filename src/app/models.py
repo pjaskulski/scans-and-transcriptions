@@ -8,6 +8,10 @@ class AppConfig:
     default_prompt: str = "prompt_handwritten_pol_xx_century.txt"
     api_key: str = ""
     tts_lang: str = "pl"
+    htr_model: str = "gemini-3.1-pro-preview"
+    analysis_model: str = "gemini-3-flash-preview"
+    box_model: str = "gemini-3-pro-image-preview"
+    tts_model: str = "gemini-2.5-flash-preview-tts"
 
 
 @dataclass

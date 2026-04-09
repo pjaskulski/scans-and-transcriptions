@@ -6,7 +6,7 @@ The process is straightforward: you prepare a folder containing scans of manuscr
 
 Since the application uses models via the API, this is subject to a fee in accordance with Google's current [price list](https://ai.google.dev/gemini-api/docs/pricing). 
 
-The Gemini Pro 3 model is used for transcription, while the Gemini Flash 2.5 TTS model generates audio recordings (TTS) and the Gemini Pro 3 Image model (also known as Nano Banana Pro) locates proper names on a scan. The application can prepare transcriptions for a single image or a series of files. The Gemini API key should be stored in the `.env` file as the `GEMINI_API_KEY` environment variable, or in the `config/config.json` file under the `api_key` field.
+The Gemini Pro 3 model is used for transcription, while the Gemini Flash 2.5 TTS model generates audio recordings (TTS) and the Gemini Pro 3 Image model (also known as Nano Banana Pro) locates proper names on a scan. The application can prepare transcriptions for a single image or a series of files. The Gemini API key should be stored in `config/config.json` under the `api_key` field.
 
 
 ## Application features:
@@ -167,12 +167,8 @@ python main.py
 
 ## Configuration 
 
-API key: Create a .env file in the main application directory and add your Gemini key to it: 
-
-```
-GEMINI_API_KEY=your_key_here
-```
+API key: enter your Gemini key in the application settings window. It will be saved in `config/config.json` under the `api_key` field.
 
 **Prompts**: The content of the instructions for the AI model (prompts) should be located in `.txt` files in the `prompt/` directory. This directory already contains sample prompts.
 
-**Settings**: The application stores preferences (font size, user interface language) in `config/config.json`. You can also save your API key in the `api_key` field in this file. The application first looks for the `GEMINI_API_KEY` environment variable, and if it is not found, it tries to load the key from `config/config.json`.
+**Settings**: The application stores preferences (font size, user interface language) in `config/config.json`. The Gemini API key is also stored in this file under the `api_key` field.

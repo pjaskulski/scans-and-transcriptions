@@ -35,11 +35,17 @@ def audio_needs_generation(image_path: str, json_path: str | None, checksum: str
     return cache_data.get("tts_checksum") != checksum
 
 
-def generate_mp3_from_text(api_key: str, text: str, image_path: str, voice_name: str = "Enceladus"):
+def generate_mp3_from_text(
+    api_key: str,
+    text: str,
+    image_path: str,
+    voice_name: str = "Enceladus",
+    model_name: str = "gemini-2.5-flash-preview-tts",
+):
     wav_path = str(wav_for_image(image_path))
     mp3_path = str(mp3_for_image(image_path))
 
-    model, response = synthesize_speech(api_key, text, voice_name=voice_name)
+    model, response = synthesize_speech(api_key, text, voice_name=voice_name, model_name=model_name)
     data = response.candidates[0].content.parts[0].inline_data.data
 
     wave_file(wav_path, data)

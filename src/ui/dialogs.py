@@ -6,6 +6,14 @@ import ttkbootstrap as ttk
 from ttkbootstrap.constants import BOTTOM, BOTH, LEFT, RIGHT, VERTICAL, X, Y
 from ttkbootstrap.widgets.scrolled import ScrolledFrame
 
+from app.models import AppConfig
+from services.config_service import load_app_config, save_app_config
+from services.gemini_service import (
+    model_code_for_label,
+    model_label_for_code,
+    model_labels,
+)
+
 
 def open_batch_dialog(app):
     if app.is_transcribing:
@@ -173,3 +181,130 @@ def edit_current_prompt(app):
 
     scrollbar.config(command=txt_edit.yview)
     txt_edit.focus_set()
+
+
+def open_settings_dialog(app):
+    settings_win = tk.Toplevel(app.root)
+    settings_win.title(app.t["settings_win_title"])
+    settings_win.geometry("700x560")
+    settings_win.resizable(False, False)
+    settings_win.transient(app.root)
+    settings_win.grab_set()
+
+    container = ttk.Frame(settings_win, padding=15)
+    container.pack(fill=BOTH, expand=True)
+
+    ttk.Label(container, text=app.t["settings_api_key_label"], font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    ttk.Label(
+        container,
+        text=app.t["settings_api_key_help"],
+        bootstyle="secondary",
+        font=("Segoe UI", 8),
+        wraplength=560,
+        justify=LEFT,
+    ).pack(anchor="w", pady=(2, 10))
+
+    config = load_app_config(app.config_file)
+    api_key_var = tk.StringVar(value=config.api_key)
+    htr_model_var = tk.StringVar(value=model_label_for_code("htr", config.htr_model))
+    analysis_model_var = tk.StringVar(value=model_label_for_code("analysis", config.analysis_model))
+    box_model_var = tk.StringVar(value=model_label_for_code("box", config.box_model))
+    tts_model_var = tk.StringVar(value=model_label_for_code("tts", config.tts_model))
+
+    entry = ttk.Entry(container, textvariable=api_key_var, width=72, show="*")
+    entry.pack(fill=X, pady=(0, 6))
+    entry.focus_set()
+
+    show_var = tk.BooleanVar(value=False)
+
+    def toggle_visibility():
+        entry.config(show="" if show_var.get() else "*")
+
+    ttk.Checkbutton(
+        container,
+        text=app.t["settings_show_key"],
+        variable=show_var,
+        command=toggle_visibility,
+        bootstyle="round-toggle",
+    ).pack(anchor="w", pady=(0, 12))
+
+    ttk.Separator(container).pack(fill=X, pady=(4, 10))
+
+    ttk.Label(container, text=app.t["settings_models_label"], font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    ttk.Label(
+        container,
+        text=app.t["settings_models_help"],
+        bootstyle="secondary",
+        font=("Segoe UI", 8),
+        wraplength=640,
+        justify=LEFT,
+    ).pack(anchor="w", pady=(2, 10))
+
+    ttk.Label(container, text=app.t["settings_htr_model_label"]).pack(anchor="w")
+    htr_combo = ttk.Combobox(container, state="readonly", values=model_labels("htr"), textvariable=htr_model_var)
+    htr_combo.pack(fill=X, pady=(2, 10))
+
+    ttk.Label(container, text=app.t["settings_analysis_model_label"]).pack(anchor="w")
+    analysis_combo = ttk.Combobox(
+        container,
+        state="readonly",
+        values=model_labels("analysis"),
+        textvariable=analysis_model_var,
+    )
+    analysis_combo.pack(fill=X, pady=(2, 10))
+
+    ttk.Label(container, text=app.t["settings_box_model_label"]).pack(anchor="w")
+    box_combo = ttk.Combobox(container, state="readonly", values=model_labels("box"), textvariable=box_model_var)
+    box_combo.pack(fill=X, pady=(2, 10))
+
+    ttk.Label(container, text=app.t["settings_tts_model_label"]).pack(anchor="w")
+    tts_combo = ttk.Combobox(container, state="readonly", values=model_labels("tts"), textvariable=tts_model_var)
+    tts_combo.pack(fill=X, pady=(2, 12))
+
+    btn_row = ttk.Frame(container)
+    btn_row.pack(fill=X, side=BOTTOM)
+
+    def save_settings():
+        app.api_key = api_key_var.get().strip()
+        app.htr_model = model_code_for_label("htr", htr_model_var.get())
+        app.analysis_model = model_code_for_label("analysis", analysis_model_var.get())
+        app.box_model = model_code_for_label("box", box_model_var.get())
+        app.tts_model = model_code_for_label("tts", tts_model_var.get())
+        try:
+            save_app_config(
+                AppConfig(
+                    font_size=app.font_size,
+                    current_lang=app.current_lang,
+                    default_prompt=app.default_prompt,
+                    api_key=app.api_key,
+                    tts_lang=getattr(app, "current_tts_lang_code", "pl"),
+                    htr_model=app.htr_model,
+                    analysis_model=app.analysis_model,
+                    box_model=app.box_model,
+                    tts_model=app.tts_model,
+                ),
+                app.config_file,
+            )
+            messagebox.showinfo(app.t["msg_save_config_title"], app.t["msg_save_config_ok"], parent=settings_win)
+            settings_win.destroy()
+        except Exception as e:
+            messagebox.showerror(
+                app.t["msg_error_title"],
+                app.t["msg_save_config_file_error"] + f": {e}",
+                parent=settings_win,
+            )
+
+    ttk.Button(
+        btn_row,
+        text=app.t["btn_settings_cancel"],
+        command=settings_win.destroy,
+        bootstyle="outline-secondary",
+    ).pack(side=LEFT)
+    ttk.Button(
+        btn_row,
+        text=app.t["btn_settings_save"],
+        command=save_settings,
+        bootstyle="success",
+    ).pack(side=RIGHT)
+
+    settings_win.wait_window()
