@@ -1,1 +1,5 @@
+<<<<<<< HEAD
 {"font_size": 11, "current_lang": "PL", "default_prompt": "prompt_handwritten_pol_xx_century.txt", "api_key": ""}
+=======
+{"font_size": 10, "current_lang": "PL", "default_prompt": "prompt_ocr_latin.txt", "api_key": ""}
+>>>>>>> 788537e (refaktoring kodu)

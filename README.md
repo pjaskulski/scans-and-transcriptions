@@ -143,13 +143,35 @@ The project was carried out at the Digital History Lab of the Institute of Histo
 
 ## Installation
 
+<<<<<<< HEAD
 Ensure you have Python installed (version 3.10 or newer is recommended).
+=======
+Tested on Ubuntu. Ensure you have Python installed (version 3.10 or newer is recommended).
+>>>>>>> 788537e (refaktoring kodu)
 Install the required libraries:
 
 ```
 pip install -r requirements.txt
 ```
 
+<<<<<<< HEAD
+=======
+For newer versions of Python, the application requires the audioop-lts library.
+
+System libraries are also required:
+
+```
+sudo apt install portaudio19-dev python3-dev
+sudo apt install ffmpeg
+```
+
+Run the application with:
+
+```
+python src/main.py
+```
+
+>>>>>>> 788537e (refaktoring kodu)
 ## Configuration 
 
 API key: Create a .env file in the main application directory and add your Gemini key to it: 
@@ -158,7 +180,13 @@ API key: Create a .env file in the main application directory and add your Gemin
 GEMINI_API_KEY=your_key_here
 ```
 
+<<<<<<< HEAD
 **Prompts**: The content of the instructions for the AI model (prompts) should be located in .txt files in the ../prompt/ subdirectory. This directory already contains sample prompts.
 
 **Settings**: The application stores preferences (font size, user interface language) in the config.json file. You can also save your API key in the ‘api_key’ field in this file. The application first looks for the GEMINI_API_KEY environment variable, and if it is not found, it tries to load the key from the config.json file.
 
+=======
+**Prompts**: The content of the instructions for the AI model (prompts) should be located in `.txt` files in the `prompt/` directory. This directory already contains sample prompts.
+
+**Settings**: The application stores preferences (font size, user interface language) in `config/config.json`. You can also save your API key in the `api_key` field in this file. The application first looks for the `GEMINI_API_KEY` environment variable, and if it is not found, it tries to load the key from `config/config.json`.
+>>>>>>> 788537e (refaktoring kodu)
