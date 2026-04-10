@@ -12,6 +12,7 @@ The Gemini Pro 3 model is used for transcription, while the Gemini Flash 2.5 TTS
 ## Application features:
 
   - **Browsing scans and transcriptions**. The application assumes that the specified directory contains scan files and transcript files with identical names but with the *.txt extension. If a text file is missing, the application will automatically create an empty one.
+  - If the folder does not yet contain scan images, you can **import pages from a PDF file**. The application can extract pages from PDF files and save them in the working folder as `img-01.png`, `img-02.png`, etc. This is useful for digitised documents distributed as PDFs, with or without a text layer.
   - **Creating transcripts using the LLM model** (Gemini Pro 3, internet access required) for the current scan or scan series. For scan series, the application displays all scans in the selected directory and selects those that do not yet have a text transcript file or those with an empty transcript file. This selection can, of course, be changed.
   - You can perform transcriptions using one of the **predefined prompts** (prompts for Polish documents are currently available), or you can prepare your own prompt.
   - Transcription files are automatically saved when you move to the next/previous file. You can also force a save by pressing the SAVE button.
@@ -40,6 +41,10 @@ The application window is visible while Gemini is reading the scan (the progress
 In the right panel of the application, above the text field, there is a bar displaying the name of the scan directory that is currently being viewed (processed). To the right of this is a button that allows you to change the folder. Clicking this button displays a folder selection window and then loads the scan and transcription files (txt, if they are already in the folder). The same folder selection window appears automatically when the application starts.
 
 ![Screen](/doc/images_folder.png)
+
+If the working folder is empty or if your source material is stored in a PDF file, you can also use the **PDF import** button. The application will extract the pages of the PDF as image files and save them in the current working folder, using names such as `img-01.png`, `img-02.png`, and so on. During import, a progress window is displayed, which is especially useful for large PDFs containing many hundreds of pages.
+
+![PDF import](/doc/import_pdf.png)
 
 **Main toolbar**:
 
@@ -172,3 +177,5 @@ API key: enter your Gemini key in the application settings window. It will be sa
 **Prompts**: The content of the instructions for the AI model (prompts) should be located in `.txt` files in the `prompt/` directory. This directory already contains sample prompts.
 
 **Settings**: The application stores preferences (font size, user interface language) in `config/config.json`. The Gemini API key is also stored in this file under the `api_key` field.
+
+**PDF import**: The PDF-to-image import feature is implemented in Python using the `PyMuPDF` library, so it does not require separate system tools such as Poppler or `pdftoppm`.

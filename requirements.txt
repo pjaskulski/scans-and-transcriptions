@@ -5,5 +5,6 @@ python-dotenv
 google-genai
 just_playback
 pydub
+pymupdf
 tk
 audioop-lts

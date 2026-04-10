@@ -3,6 +3,7 @@ import os
 import re
 import json
 import threading
+import warnings
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image
@@ -37,6 +38,7 @@ from services.gemini_service import (
     verify_transcription,
 )
 from services.prompt_service import DEFAULT_PROMPT_TEMPLATE, ensure_prompt_dir, read_default_prompt, read_prompt
+from services.pdf_service import can_extract_pdf_pages, extract_pdf_pages
 from services.text_service import build_diff_ranges, prepare_text_for_tei, tag_entities_tei, tk_index_from_offset
 from services.usage_log_service import append_usage_log, read_usage_log
 from ui.batch_controller import BatchController
@@ -46,6 +48,10 @@ from ui.dialogs import (
     open_batch_dialog as open_batch_dialog_window,
     open_settings_dialog as open_settings_dialog_window,
 )
+
+# Aplikacja pracuje na lokalnych, zaufanych skanach archiwalnych, które bywają bardzo duże.
+Image.MAX_IMAGE_PIXELS = None
+warnings.simplefilter("ignore", Image.DecompressionBombWarning)
 
 # ------------------------------- CLASS ----------------------------------------
 class ToolTip:
@@ -123,6 +129,7 @@ class ManuscriptEditor:
         self.prompt_text = ""
         self.prompt_filename_var = tk.StringVar(value="Brak (wybierz plik)")
         self.current_folder_var = tk.StringVar(value="Nie wybrano katalogu")
+        self.current_folder_path = ""
         self.current_prompt_path = None
 
         self.config_file = "config.json"
@@ -288,7 +295,16 @@ class ManuscriptEditor:
             cursor="hand2",
             padding=0,
         )
+        self.btn_pdf_import = ttk.Button(
+            self.folder_status_frame,
+            text=self.t["btn_pdf_import"],
+            command=self.import_pdf_to_current_folder,
+            bootstyle="link-primary",
+            cursor="hand2",
+            padding=0,
+        )
         self.btn_settings.pack(side=RIGHT, padx=(0, 8))
+        self.btn_pdf_import.pack(side=RIGHT, padx=(0, 8))
         self.btn_folder_change.pack(side=RIGHT)
 
         # ramka na tekst
@@ -572,6 +588,7 @@ class ManuscriptEditor:
         self.btn_cancelsearch_tooltip = ToolTip(self.btn_cancelsearch, self.t["tt_btn_cancelsearch"])
         self.btn_new_prompt_tooltip = ToolTip(self.btn_new_prompt, self.t["tt_btn_new_prompt"])
         self.btn_settings_tooltip = ToolTip(self.btn_settings, self.t["tt_btn_settings"])
+        self.btn_pdf_import_tooltip = ToolTip(self.btn_pdf_import, self.t["tt_btn_pdf_import"])
 
         self.select_folder()
 
@@ -770,6 +787,7 @@ class ManuscriptEditor:
         self.lbl_folder_status.config(text=self.t["folder_path"])
         self.btn_folder_change.config(text=self.t["btn_folder_change"])
         self.btn_settings.config(text=self.t["btn_settings"])
+        self.btn_pdf_import.config(text=self.t["btn_pdf_import"])
         self.btn_seria.config(text=self.t["btn_batch"])
         self.btn_prompt_change.config(text=self.t["btn_prompt"])
         self.btn_edit_prompt.config(text=self.t["btn_edit_prompt"])
@@ -805,6 +823,7 @@ class ManuscriptEditor:
         self.btn_cancelsearch_tooltip.update_text(self.t["tt_btn_cancelsearch"])
         self.btn_new_prompt_tooltip.update_text(self.t["tt_btn_new_prompt"])
         self.btn_settings_tooltip.update_text(self.t["tt_btn_settings"])
+        self.btn_pdf_import_tooltip.update_text(self.t["tt_btn_pdf_import"])
 
 
     def show_usage_log(self):
@@ -1627,6 +1646,7 @@ class ManuscriptEditor:
         )
 
         if folder_path:
+            self.current_folder_path = folder_path
             display_path = folder_path
             if len(display_path) > 40:
                 display_path = "..." + display_path[-37:] # ostatnie 37 znaków
@@ -1639,9 +1659,29 @@ class ManuscriptEditor:
     def load_file_list(self, folder):
         """ ładowanie listy plików skanów ze wskazanego folderu"""
         try:
+            self.current_folder_path = folder
             all_files = os.listdir(folder)
             images = [f for f in all_files if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+            pdf_files = [f for f in all_files if f.lower().endswith(".pdf")]
             images.sort()
+            pdf_files.sort()
+
+            if not images and pdf_files:
+                if messagebox.askyesno(
+                    self.t["msg_pdf_import_title"],
+                    self.t["msg_pdf_import_question"],
+                    parent=self.root,
+                ):
+                    created_images = self._import_pdf_files(folder, pdf_files)
+                    if created_images:
+                        messagebox.showinfo(
+                            self.t["msg_pdf_import_title"],
+                            self.t["msg_pdf_import_success"] + f": {len(created_images)}",
+                            parent=self.root,
+                        )
+                        all_files = os.listdir(folder)
+                        images = [f for f in all_files if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+                        images.sort()
 
             self.file_pairs = []
             for img in images:
@@ -1666,6 +1706,112 @@ class ManuscriptEditor:
         except Exception as e:
             messagebox.showerror(self.t["msg_error_title"],
                                  self.t["msg_folder_scan_error"] + f": {e}", parent=self.root)
+
+
+    def _import_pdf_files(self, folder, pdf_files):
+        if not can_extract_pdf_pages():
+            messagebox.showerror(
+                self.t["msg_error_title"],
+                self.t["msg_pdf_import_unavailable"],
+                parent=self.root,
+            )
+            return []
+
+        progress_win = tk.Toplevel(self.root)
+        progress_win.title(self.t["msg_pdf_import_title"])
+        progress_win.geometry("520x140")
+        progress_win.resizable(False, False)
+        progress_win.transient(self.root)
+        progress_win.grab_set()
+
+        frame = ttk.Frame(progress_win, padding=15)
+        frame.pack(fill=BOTH, expand=True)
+
+        status_var = tk.StringVar(value=self.t["msg_pdf_import_progress_prepare"])
+        ttk.Label(frame, textvariable=status_var, font=("Segoe UI", 10)).pack(anchor="w", pady=(0, 10))
+
+        progress_var = tk.DoubleVar(value=0)
+        progress_bar = ttk.Progressbar(
+            frame,
+            mode="determinate",
+            maximum=100,
+            variable=progress_var,
+            bootstyle="info-striped",
+        )
+        progress_bar.pack(fill=X, pady=(0, 8))
+
+        details_var = tk.StringVar(value="")
+        ttk.Label(frame, textvariable=details_var, bootstyle="secondary").pack(anchor="w")
+
+        def update_pdf_progress(processed, total, pdf_name, page_number, pdf_total_pages):
+            if total:
+                progress_var.set((processed / total) * 100)
+            status_var.set(self.t["msg_pdf_import_progress"])
+            details_var.set(
+                self.t["msg_pdf_import_progress_details"].format(
+                    pdf=pdf_name,
+                    page=page_number,
+                    pdf_pages=pdf_total_pages,
+                    processed=processed,
+                    total=total,
+                )
+            )
+            progress_win.update_idletasks()
+
+        self.root.update_idletasks()
+        try:
+            return extract_pdf_pages(
+                folder,
+                pdf_files,
+                progress_callback=update_pdf_progress,
+            )
+        finally:
+            if progress_win.winfo_exists():
+                progress_win.destroy()
+
+
+    def import_pdf_to_current_folder(self):
+        if self.is_transcribing:
+            return
+
+        if not self.current_folder_path:
+            messagebox.showwarning(
+                self.t["msg_warning"],
+                self.t["msg_pdf_import_choose_folder"],
+                parent=self.root,
+            )
+            return
+
+        pdf_path = filedialog.askopenfilename(
+            title=self.t["select_pdf_import_title"],
+            initialdir=self.current_folder_path,
+            filetypes=[(self.t["file_type_pdf"], "*.pdf")],
+            parent=self.root,
+        )
+        if not pdf_path:
+            return
+
+        if os.path.dirname(pdf_path) != self.current_folder_path:
+            from shutil import copy2
+
+            copied_pdf_name = os.path.basename(pdf_path)
+            copied_pdf_path = os.path.join(self.current_folder_path, copied_pdf_name)
+            if not os.path.exists(copied_pdf_path):
+                copy2(pdf_path, copied_pdf_path)
+            pdf_name = copied_pdf_name
+        else:
+            pdf_name = os.path.basename(pdf_path)
+
+        created_images = self._import_pdf_files(self.current_folder_path, [pdf_name])
+        if not created_images:
+            return
+
+        messagebox.showinfo(
+            self.t["msg_pdf_import_title"],
+            self.t["msg_pdf_import_success"] + f": {len(created_images)}",
+            parent=self.root,
+        )
+        self.load_file_list(self.current_folder_path)
 
 
     def load_pair(self, index):
