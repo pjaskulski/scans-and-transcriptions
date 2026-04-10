@@ -170,6 +170,10 @@ Run the application with:
 python main.py
 ```
 
+## Windows package
+
+The scans_windows.zip package contains the python runtime, libraries and an application that can be started with the start.bat script.
+
 ## Configuration 
 
 API key: enter your Gemini key in the application settings window. It will be saved in `config/config.json` under the `api_key` field.

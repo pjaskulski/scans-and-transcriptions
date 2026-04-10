@@ -7,4 +7,4 @@ just_playback
 pydub
 pymupdf
 tk
-audioop-lts
+pygame

@@ -1,3 +1,5 @@
+import os
+import sys
 from pathlib import Path
 
 
@@ -6,6 +8,8 @@ def src_root() -> Path:
 
 
 def project_root() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
     return src_root().parent
 
 
@@ -15,6 +19,10 @@ def config_dir() -> Path:
 
 def prompts_dir() -> Path:
     return project_root() / "prompt"
+
+
+def bin_dir() -> Path:
+    return project_root() / "bin"
 
 
 def tests_dir() -> Path:
@@ -55,3 +63,13 @@ def wav_for_image(image_path: str | Path) -> Path:
 
 def tokens_log_for_folder(folder: str | Path) -> Path:
     return Path(folder) / "tokens.log"
+
+
+def ffmpeg_binary() -> Path:
+    name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+    return bin_dir() / name
+
+
+def ffprobe_binary() -> Path:
+    name = "ffprobe.exe" if os.name == "nt" else "ffprobe"
+    return bin_dir() / name

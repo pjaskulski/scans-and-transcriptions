@@ -3,9 +3,16 @@ import wave
 
 from pydub import AudioSegment
 
-from app.paths import mp3_for_image, wav_for_image
+from app.paths import ffmpeg_binary, ffprobe_binary, mp3_for_image, wav_for_image
 from services.cache_service import load_cache
 from services.gemini_service import synthesize_speech
+
+
+if ffmpeg_binary().exists():
+    AudioSegment.converter = str(ffmpeg_binary())
+
+if ffprobe_binary().exists():
+    AudioSegment.ffprobe = str(ffprobe_binary())
 
 
 def wave_file(filename, pcm, channels=1, rate=24000, sample_width=2):

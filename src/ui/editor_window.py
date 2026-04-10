@@ -10,7 +10,7 @@ from PIL import Image
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from ttkbootstrap.widgets.tableview import Tableview
-from just_playback import Playback
+import pygame
 
 from app.models import AppConfig
 from app.paths import fix_for_text, mp3_for_image, prompt_file, prompts_dir
@@ -54,6 +54,77 @@ Image.MAX_IMAGE_PIXELS = None
 warnings.simplefilter("ignore", Image.DecompressionBombWarning)
 
 # ------------------------------- CLASS ----------------------------------------
+class AudioManager:
+    def __init__(self):
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
+        self.path = None
+        self._paused = False
+
+    def load_file(self, path):
+        """Metoda o nazwie identycznej jak w just_playback."""
+        if os.path.exists(path):
+            self.path = path
+            pygame.mixer.music.load(path)
+            self._paused = False
+        else:
+            print(f"Błąd: Nie znaleziono pliku {path}")
+
+    def play(self):
+        if self._paused:
+            pygame.mixer.music.unpause()
+            self._paused = False
+        else:
+            pygame.mixer.music.play()
+
+    def pause(self):
+        pygame.mixer.music.pause()
+        self._paused = True
+
+    def stop(self):
+        pygame.mixer.music.stop()
+        self._paused = False
+
+    def seek(self, seconds):
+        """Przewija do konkretnej sekundy."""
+        pygame.mixer.music.play(start=seconds)
+        self._paused = False
+
+    @property
+    def duration(self):
+        if self.path:
+            sound = pygame.mixer.Sound(self.path)
+            return sound.get_length()
+        return 0
+
+    @property
+    def curr_pos(self):
+        # Pygame zwraca czas od startu ostatniego play()
+        return pygame.mixer.music.get_pos() / 1000.0
+
+    @property
+    def paused(self):
+        """Właściwość sprawdzająca, czy odtwarzanie jest wstrzymane."""
+        return self._paused
+
+    @property
+    def active(self):
+        """Właściwość sprawdzająca, czy dźwięk w ogóle 'leci'."""
+        return pygame.mixer.music.get_busy()
+
+    @property
+    def volume(self):
+        return pygame.mixer.music.get_volume()
+
+    @volume.setter
+    def volume(self, value):
+        """Obsługa ustawiania głośności przez audio.volume = x."""
+        pygame.mixer.music.set_volume(max(0.0, min(1.0, value)))
+
+    def set_volume(self, value):
+        """Metoda pomocnicza, jeśli wolisz funkcję zamiast właściwości."""
+        self.volume = value
+
 class ToolTip:
     """ klasa tworząca dymek z podpowiedzią z opóźnieniem (500ms) """
     def __init__(self, widget, text, delay=500):
@@ -171,7 +242,8 @@ class ManuscriptEditor:
         self.stop_batch_flag = False
         self.batch_checkbox_widgets = []
 
-        self.playback = Playback()
+        #self.playback = Playback()
+        self.playback = AudioManager()
 
         self.is_reading_audio = False
 
