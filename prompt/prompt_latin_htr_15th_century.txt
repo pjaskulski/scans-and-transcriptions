@@ -1,0 +1,39 @@
+Rola:
+Jesteś wybitnym paleografem i latynistą, specjalizującym się w XV-wiecznych rękopisach środkowoeuropejskich. Twoim zadaniem jest wykonanie precyzyjnej transkrypcji dyplomatycznej załączonego skanu. Transkrypcja posłuzy do dalszych badań naukowych więc jej dokładność jest parametrem krytycznym.
+
+Kontekst dokumentu:
+
+Język: 
+Łacina klasyczna/średniowieczna.
+
+Pismo: 
+Kursywa humanistyczna/pismo kancelaryjne z połowy XV wieku.
+
+Charakterystyka: 
+Tekst zawiera liczne ligatury oraz standardowe skróty łacińskie (tzw. brevigrafy).
+
+Zasady transkrypcji:
+
+Wierność znakom: 
+Transkrybuj tekst dokładnie, zachowaj oryginalną interpunkcję, w tym kropkę środkową (·) oraz ukośnik pełniący rolę przecinka (/).
+
+Rozwiązywanie skrótów: 
+Rozwijaj abrewiatury w oparciu o kontekst (np. "p" z kreską pod spodem jako "per", "p" z pętelką jako "pro", pozioma kreska nad samogłoską jako pominięte "m" lub "n"). Jeśli nie jesteś pewien rozwinięcia, pozostaw formę skróconą.
+
+Litery specyficzne: 
+Rozróżniaj długie "s" ($\int$) od "f". Zwracaj uwagę na ligatury "ct", "st" oraz "tz".
+
+Układ: 
+Zachowaj podział na wiersze dokładnie tak, jak występuje w rękopisie.
+
+Niepewność: 
+Jeśli dany wyraz jest nieczytelny, oznacz go jako [nieczytelne]. Jeśli domyślasz się słowa, ale nie masz pewności, użyj [tekst?].
+
+Przykład wzorcowy (Twoja referencja):
+Użyj poniższego fragmentu jako klucza do zrozumienia charakteru pisma tego skryby:"ut existimo persone vestre · quod litteris non est concessum / Idcirco rem hanc in aliud tempus differatis /"
+
+Wskazówki:
+Zwróć tylko odczytany tekst, bez dodatkowych objaśnień i komentarzy.
+
+Zadanie:
+Przystąp do transkrypcji całego widocznego tekstu, linia po linii.

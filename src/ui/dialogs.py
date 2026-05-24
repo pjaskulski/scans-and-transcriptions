@@ -209,7 +209,6 @@ def open_settings_dialog(app):
     htr_model_var = tk.StringVar(value=model_label_for_code("htr", config.htr_model))
     analysis_model_var = tk.StringVar(value=model_label_for_code("analysis", config.analysis_model))
     box_model_var = tk.StringVar(value=model_label_for_code("box", config.box_model))
-    tts_model_var = tk.StringVar(value=model_label_for_code("tts", config.tts_model))
 
     entry = ttk.Entry(container, textvariable=api_key_var, width=72, show="*")
     entry.pack(fill=X, pady=(0, 6))
@@ -257,10 +256,6 @@ def open_settings_dialog(app):
     box_combo = ttk.Combobox(container, state="readonly", values=model_labels("box"), textvariable=box_model_var)
     box_combo.pack(fill=X, pady=(2, 10))
 
-    ttk.Label(container, text=app.t["settings_tts_model_label"]).pack(anchor="w")
-    tts_combo = ttk.Combobox(container, state="readonly", values=model_labels("tts"), textvariable=tts_model_var)
-    tts_combo.pack(fill=X, pady=(2, 12))
-
     btn_row = ttk.Frame(container)
     btn_row.pack(fill=X, side=BOTTOM)
 
@@ -269,7 +264,6 @@ def open_settings_dialog(app):
         app.htr_model = model_code_for_label("htr", htr_model_var.get())
         app.analysis_model = model_code_for_label("analysis", analysis_model_var.get())
         app.box_model = model_code_for_label("box", box_model_var.get())
-        app.tts_model = model_code_for_label("tts", tts_model_var.get())
         try:
             save_app_config(
                 AppConfig(
@@ -277,11 +271,9 @@ def open_settings_dialog(app):
                     current_lang=app.current_lang,
                     default_prompt=app.default_prompt,
                     api_key=app.api_key,
-                    tts_lang=getattr(app, "current_tts_lang_code", "pl"),
                     htr_model=app.htr_model,
                     analysis_model=app.analysis_model,
                     box_model=app.box_model,
-                    tts_model=app.tts_model,
                 ),
                 app.config_file,
             )

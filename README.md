@@ -6,7 +6,7 @@ The process is straightforward: you prepare a folder containing scans of manuscr
 
 Since the application uses models via the API, this is subject to a fee in accordance with Google's current [price list](https://ai.google.dev/gemini-api/docs/pricing). 
 
-The Gemini Pro 3 model is used for transcription, while the Gemini Flash 2.5 TTS model generates audio recordings (TTS) and the Gemini Pro 3 Image model (also known as Nano Banana Pro) locates proper names on a scan. The application can prepare transcriptions for a single image or a series of files. The Gemini API key should be stored in `config/config.json` under the `api_key` field.
+The Gemini Pro 3 model is used for transcription, while the Gemini Pro 3 Image model (also known as Nano Banana Pro) locates proper names on a scan. The application can prepare transcriptions for a single image or a series of files. The Gemini API key should be stored in `config/config.json` under the `api_key` field.
 
 
 ## Application features:
@@ -19,7 +19,6 @@ The Gemini Pro 3 model is used for transcription, while the Gemini Flash 2.5 TTS
   - Transcriptions can be saved as a **bulk text file** or in a **docx file**. For docx files, the application also concatenates broken words and lines into paragraphs. Transcriptions can also be saved in **TEI-XML** format. 
   - To facilitate verification of transcription accuracy, the application allows you to pan the scan using the left mouse button, **zoom in/out** using the mouse scroll wheel, and display a **magnifying glass** window at a selected location using the right mouse button. 
   - Simple **filters** can be applied to scans, such as contrast enhancement and image inversion.
-  - A feature that aids verification is the ability to **read the transcript aloud**. This feature, like transcriptions, requires internet access (the Gemini TTS model is used).
   - You can adjust the font size in the transcription field.
   - Due to transcription errors often appearing in proper names (e.g. people, places and institutions), the option to **highlight** such words (**NER** button) has been added to draw attention to them during transcription verification. An experimental function (BOX button) **automatically marks entity names** in the scan. These names are marked with frames, and transcription text is placed above the frame, for a quick assessment of transcription accuracy. The size and position of the frames for entity names can be adjusted. The list of found **entity names can be exported to a CSV file** for further use.
   - The application **records the cost of all API calls** for the current catalogue, providing information about the date, the model used, the number of tokens used (input and output), and the cost of the call. It also summarizes the cost for the entire current scan catalogue.
@@ -74,8 +73,6 @@ You can also close the application using the Ctrl+Q shortcut.
 ![Screen](/doc/image_info.png)
 
 Below is a bar displaying information about the current scan file, including its name, number in the series and the total number of scans in the folder. To the right are the 'A+' and 'A-' buttons, which are used to adjust the font size in the text field. Between the scan file name and the font size adjustment buttons is a search field for the transcription. After entering the required text and pressing Enter, the application highlights the matching text. You can also use the arrow button to start the search. The button with the 'x' symbol removes the highlights and clears the search field. The drop-down menu on the right allows you to change the interface language. Currently, Polish and English versions are available.
-
-The second row of the toolbar contains buttons for reading the transcription aloud: “>” (Read) starts reading, “■” stops it and “||” pauses it. The Gemini TTS model supports 24 languages and automatically recognises the transcription language.
 
 The 'NER', 'BOX' and 'CLS' buttons help to verify the transcription. Due to the high frequency of errors in proper names, these can be marked in the transcription text ('NER') and, for comparison, on the scan ('BOX'). The 'CLS' button clears the markings. The 'LEG' button displays a legend with descriptions of the colours used to mark different categories of proper names (people, places and organisations).
 The 'CSV' button allows you to export all the proper names found in the current catalogue to a CSV file.
@@ -155,13 +152,10 @@ Install the required libraries:
 pip install -r requirements.txt
 ```
 
-For newer versions of Python, the application requires the audioop-lts library.
-
 System libraries are also required:
 
 ```
-sudo apt install portaudio19-dev python3-dev
-sudo apt install ffmpeg
+sudo apt install python3-dev
 ```
 
 Run the application with:

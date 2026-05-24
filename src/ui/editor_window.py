@@ -10,12 +10,10 @@ from PIL import Image
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from ttkbootstrap.widgets.tableview import Tableview
-import pygame
 
 from app.models import AppConfig
-from app.paths import fix_for_text, mp3_for_image, prompt_file, prompts_dir
-from services.audio_service import audio_needs_generation, generate_mp3_from_text
-from services.cache_service import calculate_checksum, get_ner_json_path, load_cache, save_cache
+from app.paths import prompt_file, prompts_dir
+from services.cache_service import calculate_checksum, get_ner_json_path, save_cache
 from services.config_service import load_app_config, load_localization, save_app_config
 from services.export_service import (
     collect_ner_rows,
@@ -29,7 +27,6 @@ from services.gemini_service import (
     DEFAULT_ANALYSIS_MODEL,
     DEFAULT_BOX_MODEL,
     DEFAULT_HTR_MODEL,
-    DEFAULT_TTS_MODEL,
     build_nominative_map,
     extract_entities,
     locate_entities,
@@ -52,78 +49,6 @@ from ui.dialogs import (
 # Aplikacja pracuje na lokalnych, zaufanych skanach archiwalnych, które bywają bardzo duże.
 Image.MAX_IMAGE_PIXELS = None
 warnings.simplefilter("ignore", Image.DecompressionBombWarning)
-
-# ------------------------------- CLASS ----------------------------------------
-class AudioManager:
-    def __init__(self):
-        if not pygame.mixer.get_init():
-            pygame.mixer.init()
-        self.path = None
-        self._paused = False
-
-    def load_file(self, path):
-        """Metoda o nazwie identycznej jak w just_playback."""
-        if os.path.exists(path):
-            self.path = path
-            pygame.mixer.music.load(path)
-            self._paused = False
-        else:
-            print(f"Błąd: Nie znaleziono pliku {path}")
-
-    def play(self):
-        if self._paused:
-            pygame.mixer.music.unpause()
-            self._paused = False
-        else:
-            pygame.mixer.music.play()
-
-    def pause(self):
-        pygame.mixer.music.pause()
-        self._paused = True
-
-    def stop(self):
-        pygame.mixer.music.stop()
-        self._paused = False
-
-    def seek(self, seconds):
-        """Przewija do konkretnej sekundy."""
-        pygame.mixer.music.play(start=seconds)
-        self._paused = False
-
-    @property
-    def duration(self):
-        if self.path:
-            sound = pygame.mixer.Sound(self.path)
-            return sound.get_length()
-        return 0
-
-    @property
-    def curr_pos(self):
-        # Pygame zwraca czas od startu ostatniego play()
-        return pygame.mixer.music.get_pos() / 1000.0
-
-    @property
-    def paused(self):
-        """Właściwość sprawdzająca, czy odtwarzanie jest wstrzymane."""
-        return self._paused
-
-    @property
-    def active(self):
-        """Właściwość sprawdzająca, czy dźwięk w ogóle 'leci'."""
-        return pygame.mixer.music.get_busy()
-
-    @property
-    def volume(self):
-        return pygame.mixer.music.get_volume()
-
-    @volume.setter
-    def volume(self, value):
-        """Obsługa ustawiania głośności przez audio.volume = x."""
-        pygame.mixer.music.set_volume(max(0.0, min(1.0, value)))
-
-    def set_volume(self, value):
-        """Metoda pomocnicza, jeśli wolisz funkcję zamiast właściwości."""
-        self.volume = value
 
 class ToolTip:
     """ klasa tworząca dymek z podpowiedzią z opóźnieniem (500ms) """
@@ -196,7 +121,6 @@ class ManuscriptEditor:
         self.htr_model = DEFAULT_HTR_MODEL
         self.analysis_model = DEFAULT_ANALYSIS_MODEL
         self.box_model = DEFAULT_BOX_MODEL
-        self.tts_model = DEFAULT_TTS_MODEL
         self.prompt_text = ""
         self.prompt_filename_var = tk.StringVar(value="Brak (wybierz plik)")
         self.current_folder_var = tk.StringVar(value="Nie wybrano katalogu")
@@ -221,7 +145,6 @@ class ManuscriptEditor:
             "gemini-3.1-flash-lite-preview": (0.25, 1.5),
             "gemini-3-pro-image-preview": (2.0, 12.0),
             "gemini-3.1-flash-image-preview": (0.5, 3.0),
-            "gemini-2.5-flash-preview-tts": (0.5, 10.0),
         }
 
         self.file_pairs = []
@@ -241,11 +164,6 @@ class ManuscriptEditor:
         self.btn_ai = None
         self.stop_batch_flag = False
         self.batch_checkbox_widgets = []
-
-        #self.playback = Playback()
-        self.playback = AudioManager()
-
-        self.is_reading_audio = False
 
         self.batch_log_label = None
         self.batch_vars = None
@@ -428,7 +346,7 @@ class ManuscriptEditor:
         self.lang_sel.bind("<<ComboboxSelected>>", self.change_app_language)
         self.lang_sel.pack(side=LEFT, padx=5)
 
-        # wiersz 2: narzędzia AI (NER/BOX) i TTS (lektor)
+        # wiersz 2: narzędzia AI (NER/BOX)
         self.header_row2 = ttk.Frame(self.editor_frame)
         self.header_row2.pack(fill=X, padx=5, pady=2)
 
@@ -463,22 +381,6 @@ class ManuscriptEditor:
         self.btn_verify = ttk.Button(ai_tools, text="FIX", command=self.start_verification,
                                      bootstyle="success-outline", width=4, padding=2)
         self.btn_verify.pack(side=LEFT, padx=2)
-
-        # prawa strona wiersza 2: lektor (TTS)
-        tts_tools = ttk.Frame(self.header_row2)
-        tts_tools.pack(side=RIGHT)
-
-        self.btn_speak = ttk.Button(tts_tools, text=">", command=self.read_text_aloud,
-                                    bootstyle="info-outline", width=3, padding=2)
-        self.btn_speak.pack(side=LEFT, padx=2)
-
-        self.btn_pause = ttk.Button(tts_tools, text="||", command=self.pause_reading,
-                                    bootstyle="warning-outline", width=3, padding=2, state="disabled")
-        self.btn_pause.pack(side=LEFT, padx=2)
-
-        self.btn_stop = ttk.Button(tts_tools, text="■", command=self.stop_reading,
-                                   bootstyle="secondary-outline", width=3, padding=2, state="disabled")
-        self.btn_stop.pack(side=LEFT, padx=2)
 
         ttk.Separator(self.editor_frame, orient=HORIZONTAL).pack(fill=X, padx=5, pady=2)
 
@@ -640,10 +542,6 @@ class ManuscriptEditor:
         self.btn_csv_tooltip = ToolTip(self.btn_csv, self.t["tt_btn_csv"])
         self.btn_log_tooltip = ToolTip(self.btn_log, self.t["tt_btn_log"])
         self.btn_verify_tooltip = ToolTip(self.btn_verify, self.t["tt_btn_verify"])
-        self.btn_speak_tooltip = ToolTip(self.btn_speak, self.t["tt_btn_speak"])
-        self.btn_stop_tooltip = ToolTip(self.btn_stop, self.t["tt_btn_stop"])
-        self.btn_pause_tooltip = ToolTip(self.btn_pause, self.t["tt_btn_pause"])
-
         self.btn_ai_tooltip = ToolTip(self.btn_ai, self.t["tt_btn_ai"])
         self.btn_seria_tooltip = ToolTip(self.btn_seria, self.t["tt_btn_seria"])
         self.btn_txt_tooltip = ToolTip(self.btn_txt, self.t["tt_btn_txt"])
@@ -876,10 +774,6 @@ class ManuscriptEditor:
         self.btn_cls_tooltip.update_text(self.t["tt_btn_cls"])
         self.btn_leg_tooltip.update_text(self.t["tt_btn_leg"])
         self.btn_csv_tooltip.update_text(self.t["tt_btn_csv"])
-        self.btn_speak_tooltip.update_text(self.t["tt_btn_speak"])
-        self.btn_stop_tooltip.update_text(self.t["tt_btn_stop"])
-        self.btn_pause_tooltip.update_text(self.t["tt_btn_pause"])
-
         self.btn_ai_tooltip.update_text(self.t["tt_btn_ai"])
         self.btn_seria_tooltip.update_text(self.t["tt_btn_seria"])
         self.btn_txt_tooltip.update_text(self.t["tt_btn_txt"])
@@ -1250,7 +1144,7 @@ class ManuscriptEditor:
         self.btn_ner.config(state="normal")
 
 
-    def _save_ner_cache(self, entities=None, coordinates=None, checksum=None, tts_checksum=None):
+    def _save_ner_cache(self, entities=None, coordinates=None, checksum=None):
         """ zapis wyników NER, współrzędnych i sum kontrolnych do pliku .json """
         try:
             txt_path = self.file_pairs[self.current_index]['txt'] if self.file_pairs else None
@@ -1259,7 +1153,6 @@ class ManuscriptEditor:
                 entities=entities,
                 coordinates=coordinates,
                 checksum=checksum,
-                tts_checksum=tts_checksum,
             )
         except Exception as e:
             print(self.t["msg_ner_json_error"] + f": {e}")
@@ -1462,147 +1355,6 @@ class ManuscriptEditor:
         return self.canvas_controller.on_box_press(event, entity_tag)
 
 
-    def pause_reading(self):
-        """ obsługa wstrzymywania i wznawiania odtwarzania """
-        if self.playback.active:
-            if self.playback.paused:
-                self.playback.resume()
-                self.btn_pause.config(text="||")
-            else:
-                self.playback.pause()
-                self.btn_pause.config(text=">")
-
-
-    def read_text_aloud(self):
-        """ przygotowanie tekstu i uruchamienie wątku TTS """
-        text_to_read = self.text_area.get(1.0, tk.END).strip()
-
-        if not text_to_read:
-            return
-
-        if self.is_reading_audio:
-            self.stop_reading()
-
-        pair = self.file_pairs[self.current_index]
-        mp3_path = str(mp3_for_image(pair['img']))
-        if not os.path.exists(mp3_path):
-            if not messagebox.askyesno("Audio",
-                                       self.t["msg_audio_gen"],
-                                       parent=self.root):
-                return
-
-        try:
-            needs_generation = audio_needs_generation(pair['img'], self._get_ner_json_path(), self._calculate_checksum(text_to_read))
-        except Exception as e:
-            print(self.t["msg_tts_cache_error"] + f": {e}")
-            needs_generation = True
-
-        if needs_generation and not self.ensure_api_key():
-            return
-
-        self.is_reading_audio = True
-        self.btn_speak.config(state="disabled")
-        self.btn_pause.config(state="disabled", text="||")
-        self.btn_stop.config(state="normal")
-
-        threading.Thread(target=self._tts_worker, args=(text_to_read,), daemon=True).start()
-
-
-    def _show_tts_progress(self):
-        """ Bezpieczne wyświetlenie paska postępu dla TTS """
-        self.progress_bar.pack(fill=X, pady=(0, 10), before=self.editor_frame)
-        self.progress_bar.start(10)
-
-
-    def _tts_worker(self, text):
-        """ kod wykonywany w wątku - tworzenie audio i start odtwarzania,
-            jeżeli aktualny plik audio jest w pliku, odtwarzanie z pliku bez
-            nowego generowania
-        """
-        try:
-            current_checksum = self._calculate_checksum(text)
-
-            # ścieżki
-            pair = self.file_pairs[self.current_index]
-            mp3_path = str(mp3_for_image(pair['img']))
-            json_path = self._get_ner_json_path()
-
-            try:
-                needs_generation = audio_needs_generation(pair['img'], json_path, current_checksum)
-            except Exception as e:
-                print(self.t["msg_tts_cache_error"] + f": {e}")
-                needs_generation = True
-
-            # generowanie pliku tylko jeśli to konieczne
-            if needs_generation:
-                self.root.after(0, self._show_tts_progress)
-                print(self.t["msg_gen_mp3"])
-                model, response, mp3_path = generate_mp3_from_text(
-                    self.api_key,
-                    text,
-                    pair['img'],
-                    model_name=self.tts_model,
-                )
-
-                print("TTS: wygenerowano")
-
-                # zapis kosztów w logu
-                if response.usage_metadata:
-                    self.root.after(0, lambda: self._log_api_usage(model, response.usage_metadata))
-
-                # zapis nową sumę kontrolną audio w JSON
-                self._save_ner_cache(tts_checksum=current_checksum)
-
-            # odtwarzanie
-            if self.is_reading_audio:
-                self.playback.load_file(mp3_path)
-                self.playback.play()
-
-                # odblokowanie pauzy po rozpoczęciu odtwarzania
-                self.root.after(0, lambda: self.btn_pause.config(state="normal"))
-                self.root.after(100, self._check_audio_status)
-
-        except Exception as e:
-            print(self.t["msg_tts_error"] + f": {e}")
-            self.root.after(0, self.stop_reading)
-        finally:
-            # ukrywanie paska postępu
-            self.root.after(0, self._tts_finished)
-
-
-    def _tts_finished(self):
-        """ aktualizacja GUI po zakończeniu pracy wątku TTS """
-        self.progress_bar.stop()
-        self.progress_bar.pack_forget()
-        self.btn_ner.config(state="normal")
-        self.btn_speak.config(state="normal")
-
-
-    def _check_audio_status(self):
-        """ sprawdzanie stanu odtwarzania """
-        if not self.is_reading_audio:
-            return
-
-        if self.playback.active:
-            self.root.after(100, self._check_audio_status)
-        else:
-            self.stop_reading()
-
-    def stop_reading(self):
-        """ pełne zatrzymanie i reset interfejsu """
-        try:
-            self.playback.stop()
-        except Exception as e:
-            print(e)
-
-        self.is_reading_audio = False
-        self.btn_speak.config(state="normal")
-        self.btn_pause.config(state="disabled", text="||")
-        self.btn_stop.config(state="disabled")
-
-        self._tts_finished()
-
-
     def apply_filter(self, mode):
         """ zastosuj filtr dla bieżącego skanu """
         self.canvas_controller.apply_filter(mode)
@@ -1621,13 +1373,11 @@ class ManuscriptEditor:
         try:
             config = load_app_config(self.config_file)
             self.font_size = config.font_size
-            self.current_tts_lang_code = config.tts_lang
             self.current_lang = config.current_lang
             self.default_prompt = config.default_prompt
             self.htr_model = config.htr_model
             self.analysis_model = config.analysis_model
             self.box_model = config.box_model
-            self.tts_model = config.tts_model
             if not self.api_key:
                 self.api_key = config.api_key
         except Exception as e:
@@ -1644,11 +1394,9 @@ class ManuscriptEditor:
                     current_lang=self.current_lang,
                     default_prompt=self.default_prompt,
                     api_key=existing_config.api_key,
-                    tts_lang=getattr(self, "current_tts_lang_code", "pl"),
                     htr_model=getattr(self, "htr_model", existing_config.htr_model),
                     analysis_model=getattr(self, "analysis_model", existing_config.analysis_model),
                     box_model=getattr(self, "box_model", existing_config.box_model),
-                    tts_model=getattr(self, "tts_model", existing_config.tts_model),
                 ),
                 self.config_file,
             )
@@ -2044,9 +1792,6 @@ class ManuscriptEditor:
         if self.current_index != 0:
             self.current_index = 0
 
-            if self.is_reading_audio:
-                self.stop_reading()
-
             self.load_pair(self.current_index)
 
 
@@ -2058,9 +1803,6 @@ class ManuscriptEditor:
         self.save_current_text(silent=True)
         if self.current_index < len(self.file_pairs) - 1:
             self.current_index += 1
-
-            if self.is_reading_audio:
-                self.stop_reading()
 
             self.load_pair(self.current_index)
 
@@ -2074,9 +1816,6 @@ class ManuscriptEditor:
         if self.current_index > 0:
             self.current_index -= 1
 
-            if self.is_reading_audio:
-                self.stop_reading()
-
             self.load_pair(self.current_index)
 
 
@@ -2088,9 +1827,6 @@ class ManuscriptEditor:
         self.save_current_text(silent=True)
         if self.current_index < len(self.file_pairs) - 1:
             self.current_index = len(self.file_pairs) - 1
-
-            if self.is_reading_audio:
-                self.stop_reading()
 
             self.load_pair(self.current_index)
 

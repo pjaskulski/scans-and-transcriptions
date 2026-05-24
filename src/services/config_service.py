@@ -8,7 +8,6 @@ from services.gemini_service import (
     DEFAULT_ANALYSIS_MODEL,
     DEFAULT_BOX_MODEL,
     DEFAULT_HTR_MODEL,
-    DEFAULT_TTS_MODEL,
     normalize_model_selection,
 )
 
@@ -44,13 +43,11 @@ def load_app_config(filename: str = "config.json") -> AppConfig:
         current_lang=data.get("current_lang", "PL"),
         default_prompt=data.get("default_prompt", "prompt_handwritten_pol_xx_century.txt"),
         api_key=data.get("api_key", ""),
-        tts_lang=data.get("tts_lang", "pl"),
         htr_model=normalize_model_selection("htr", data.get("htr_model", DEFAULT_HTR_MODEL)),
         analysis_model=normalize_model_selection(
             "analysis", data.get("analysis_model", DEFAULT_ANALYSIS_MODEL)
         ),
         box_model=normalize_model_selection("box", data.get("box_model", DEFAULT_BOX_MODEL)),
-        tts_model=normalize_model_selection("tts", data.get("tts_model", DEFAULT_TTS_MODEL)),
     )
 
 
@@ -61,12 +58,12 @@ def save_app_config(app_config: AppConfig, filename: str = "config.json") -> Non
     data["font_size"] = app_config.font_size
     data["current_lang"] = app_config.current_lang
     data["default_prompt"] = app_config.default_prompt
-    data["tts_lang"] = app_config.tts_lang
     data["api_key"] = app_config.api_key or ""
     data["htr_model"] = normalize_model_selection("htr", app_config.htr_model)
     data["analysis_model"] = normalize_model_selection("analysis", app_config.analysis_model)
     data["box_model"] = normalize_model_selection("box", app_config.box_model)
-    data["tts_model"] = normalize_model_selection("tts", app_config.tts_model)
+    data.pop("tts_lang", None)
+    data.pop("tts_model", None)
 
     with path.open("w", encoding="utf-8") as handle:
         json.dump(data, handle)

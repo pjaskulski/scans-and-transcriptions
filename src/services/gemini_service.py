@@ -20,27 +20,20 @@ BOX_MODEL_OPTIONS = [
     ("Gemini 3.1 Flash Image Preview", "gemini-3.1-flash-image-preview"),
 ]
 
-TTS_MODEL_OPTIONS = [
-    ("Gemini 2.5 Flash Text-to-Speech", "gemini-2.5-flash-preview-tts"),
-]
-
 DEFAULT_HTR_MODEL = "gemini-3.1-pro-preview"
 DEFAULT_ANALYSIS_MODEL = "gemini-3-flash-preview"
 DEFAULT_BOX_MODEL = "gemini-3-pro-image-preview"
-DEFAULT_TTS_MODEL = "gemini-2.5-flash-preview-tts"
 
 MODEL_OPTIONS = {
     "htr": HTR_MODEL_OPTIONS,
     "analysis": ANALYSIS_MODEL_OPTIONS,
     "box": BOX_MODEL_OPTIONS,
-    "tts": TTS_MODEL_OPTIONS,
 }
 
 DEFAULT_MODELS = {
     "htr": DEFAULT_HTR_MODEL,
     "analysis": DEFAULT_ANALYSIS_MODEL,
     "box": DEFAULT_BOX_MODEL,
-    "tts": DEFAULT_TTS_MODEL,
 }
 
 
@@ -298,32 +291,3 @@ def build_nominative_map(api_key: str, names_list: list[str], model_name: str = 
 
     return nominative_map, usage_entries
 
-
-def synthesize_speech(
-    api_key: str,
-    text: str,
-    voice_name: str = "Enceladus",
-    model_name: str = DEFAULT_TTS_MODEL,
-):
-    client = genai.Client(api_key=api_key)
-    prompt = """Przeczytaj uważnie podany dalej tekst. Odczytuj dokładnie,
-oddając oryginalne brzmienie także słów archaicznych.
-Tekst:
-"""
-
-    response = client.models.generate_content(
-        model=model_name,
-        contents=prompt + text,
-        config=types.GenerateContentConfig(
-            response_modalities=["AUDIO"],
-            speech_config=types.SpeechConfig(
-                voice_config=types.VoiceConfig(
-                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                        voice_name=voice_name,
-                    )
-                )
-            ),
-            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-        ),
-    )
-    return model_name, response

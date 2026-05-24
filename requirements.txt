@@ -3,8 +3,5 @@ Pillow
 python-docx
 python-dotenv
 google-genai
-just_playback
-pydub
 pymupdf
 tk
-pygame

@@ -33,7 +33,6 @@ def save_cache(
     entities=None,
     coordinates=None,
     checksum=None,
-    tts_checksum=None,
 ) -> str | None:
     json_path = get_ner_json_path(text_path)
     if not json_path:
@@ -50,8 +49,6 @@ def save_cache(
             cache_data.pop("coordinates", None)
         else:
             cache_data["coordinates"] = coordinates
-    if tts_checksum:
-        cache_data["tts_checksum"] = tts_checksum
 
     with open(json_path, "w", encoding="utf-8") as handle:
         json.dump(cache_data, handle, ensure_ascii=False, indent=4)

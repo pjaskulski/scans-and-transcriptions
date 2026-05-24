@@ -1,4 +1,3 @@
-import os
 import sys
 from pathlib import Path
 
@@ -19,10 +18,6 @@ def config_dir() -> Path:
 
 def prompts_dir() -> Path:
     return project_root() / "prompt"
-
-
-def bin_dir() -> Path:
-    return project_root() / "bin"
 
 
 def tests_dir() -> Path:
@@ -53,23 +48,5 @@ def fix_for_text(text_path: str | Path) -> Path:
     return sibling_with_suffix(text_path, ".fix")
 
 
-def mp3_for_image(image_path: str | Path) -> Path:
-    return sibling_with_suffix(image_path, ".mp3")
-
-
-def wav_for_image(image_path: str | Path) -> Path:
-    return sibling_with_suffix(image_path, ".wav")
-
-
 def tokens_log_for_folder(folder: str | Path) -> Path:
     return Path(folder) / "tokens.log"
-
-
-def ffmpeg_binary() -> Path:
-    name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
-    return bin_dir() / name
-
-
-def ffprobe_binary() -> Path:
-    name = "ffprobe.exe" if os.name == "nt" else "ffprobe"
-    return bin_dir() / name
