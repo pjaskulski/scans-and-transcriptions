@@ -34,6 +34,7 @@ from services.gemini_service import (
     transcribe_image,
     verify_transcription,
 )
+from services.image_filter_service import ensure_filtered_image, is_generated_filter_image
 from services.prompt_service import DEFAULT_PROMPT_TEMPLATE, ensure_prompt_dir, read_default_prompt, read_prompt
 from services.pdf_service import can_extract_pdf_pages, extract_pdf_pages
 from services.text_service import build_diff_ranges, prepare_text_for_tei, tag_entities_tei, tk_index_from_offset
@@ -45,6 +46,7 @@ from ui.dialogs import (
     open_batch_dialog as open_batch_dialog_window,
     open_settings_dialog as open_settings_dialog_window,
 )
+from ui.window_utils import set_scaled_geometry
 
 # Aplikacja pracuje na lokalnych, zaufanych skanach archiwalnych, które bywają bardzo duże.
 Image.MAX_IMAGE_PIXELS = None
@@ -110,6 +112,7 @@ class ToolTip:
 class ManuscriptEditor:
     """ główna klasa aplikacji """
     def __init__(self, root):
+        self.root = root
         self.current_lang = "PL" # domyślny język UI
         self.localization = {} # słownik wersji językowych
         self.local_file = "localization.json"
@@ -122,8 +125,8 @@ class ManuscriptEditor:
         self.analysis_model = DEFAULT_ANALYSIS_MODEL
         self.box_model = DEFAULT_BOX_MODEL
         self.prompt_text = ""
-        self.prompt_filename_var = tk.StringVar(value="Brak (wybierz plik)")
-        self.current_folder_var = tk.StringVar(value="Nie wybrano katalogu")
+        self.prompt_filename_var = tk.StringVar(master=self.root, value="Brak (wybierz plik)")
+        self.current_folder_var = tk.StringVar(master=self.root, value="Nie wybrano katalogu")
         self.current_folder_path = ""
         self.current_prompt_path = None
 
@@ -133,18 +136,17 @@ class ManuscriptEditor:
 
         self.load_config()
         self.t = self.localization[self.current_lang]
-        self._init_environment()
 
-        self.root = root
         self.root.title(self.t["title"])
-        self.root.geometry("1600x900")
+        set_scaled_geometry(self.root, 1600, 900)
+        self._init_environment()
 
         self.MODEL_PRICES = {
             "gemini-3.1-pro-preview": (2.0, 12.0),
-            "gemini-3-flash-preview": (0.5, 3.0),
-            "gemini-3.1-flash-lite-preview": (0.25, 1.5),
-            "gemini-3-pro-image-preview": (2.0, 12.0),
-            "gemini-3.1-flash-image-preview": (0.5, 3.0),
+            "gemini-3.5-flash": (1.5, 9.0),
+            "gemini-3.1-flash-lite": (0.25, 1.5),
+            "gemini-3-pro-image-previe": (2.0, 12.0),
+            "gemini-3.1-flash-image": (0.5, 3.0),
         }
 
         self.file_pairs = []
@@ -636,7 +638,7 @@ class ManuscriptEditor:
         self.progress_bar.pack(fill=X, pady=(0, 10), before=self.editor_frame)
         self.progress_bar.start(10)
 
-        img_path = self.file_pairs[self.current_index]['img']
+        img_path = self.get_transcription_image_path(self.file_pairs[self.current_index])
 
         threading.Thread(target=self._verify_worker, args=(img_path, current_text), daemon=True).start()
 
@@ -806,7 +808,7 @@ class ManuscriptEditor:
 
         log_win = tk.Toplevel(self.root)
         log_win.title(self.t["log_win_title"])
-        log_win.geometry("900x500")
+        set_scaled_geometry(log_win, 900, 500, parent=self.root)
 
         # wykorzystanie elementu Tableview
         columns = [
@@ -928,7 +930,7 @@ class ManuscriptEditor:
         """ wyświetlanie małego okna z opisem kolorów NER """
         leg_win = tk.Toplevel(self.root)
         leg_win.title(self.t["leg_win_title"])
-        leg_win.geometry("550x240")
+        set_scaled_geometry(leg_win, 550, 240, parent=self.root)
         leg_win.resizable(False, False)
         leg_win.transient(self.root)
 
@@ -1285,7 +1287,7 @@ class ManuscriptEditor:
 
             model, response = locate_entities(
                 self.api_key,
-                current_pair['img'],
+                self.get_transcription_image_path(current_pair),
                 entities_to_find,
                 model_name=self.box_model,
             )
@@ -1481,7 +1483,11 @@ class ManuscriptEditor:
         try:
             self.current_folder_path = folder
             all_files = os.listdir(folder)
-            images = [f for f in all_files if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+            images = [
+                f for f in all_files
+                if f.lower().endswith(('.jpg', '.jpeg', '.png'))
+                and not is_generated_filter_image(f)
+            ]
             pdf_files = [f for f in all_files if f.lower().endswith(".pdf")]
             images.sort()
             pdf_files.sort()
@@ -1500,7 +1506,11 @@ class ManuscriptEditor:
                             parent=self.root,
                         )
                         all_files = os.listdir(folder)
-                        images = [f for f in all_files if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+                        images = [
+                            f for f in all_files
+                            if f.lower().endswith(('.jpg', '.jpeg', '.png'))
+                            and not is_generated_filter_image(f)
+                        ]
                         images.sort()
 
             self.file_pairs = []
@@ -1539,7 +1549,7 @@ class ManuscriptEditor:
 
         progress_win = tk.Toplevel(self.root)
         progress_win.title(self.t["msg_pdf_import_title"])
-        progress_win.geometry("520x140")
+        set_scaled_geometry(progress_win, 520, 140, parent=self.root)
         progress_win.resizable(False, False)
         progress_win.transient(self.root)
         progress_win.grab_set()
@@ -1950,6 +1960,10 @@ class ManuscriptEditor:
 
         return response.text
 
+    def get_transcription_image_path(self, pair):
+        """Zwraca oryginalny obraz albo zapisaną kopię z aktywnym filtrem."""
+        return ensure_filtered_image(pair["img"], self.active_filter)
+
 
     def start_ai_transcription(self):
         """ inicjuje proces transkrypcji w tle """
@@ -1982,7 +1996,7 @@ class ManuscriptEditor:
         self.progress_bar.start(10)
 
         current_pair = self.file_pairs[self.current_index]
-        img_path = current_pair['img']
+        img_path = self.get_transcription_image_path(current_pair)
 
         # uruchomienie wątku
         thread = threading.Thread(target=self._single_worker, args=(img_path,))

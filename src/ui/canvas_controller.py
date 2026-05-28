@@ -1,10 +1,11 @@
-import json
-import os
 import tkinter as tk
 from tkinter import messagebox
 
-from PIL import Image, ImageEnhance, ImageOps, ImageTk
+from PIL import Image, ImageTk
 import ttkbootstrap as ttk
+
+from services.image_filter_service import ensure_filtered_image
+from ui.window_utils import scaled_size
 
 
 class CanvasController:
@@ -15,19 +16,27 @@ class CanvasController:
         if not self.app.original_image:
             return
         self.app.active_filter = mode
-        img = self.app.original_image.copy()
 
-        if mode == "invert":
-            if img.mode != "RGB":
-                img = img.convert("RGB")
-            img = ImageOps.invert(img)
-        elif mode == "contrast":
-            enhancer = ImageEnhance.Contrast(img)
-            img = enhancer.enhance(2.0)
-            img = ImageEnhance.Sharpness(img).enhance(1.5)
+        if mode == "normal":
+            self.app.processed_image = self.app.original_image.copy()
+            self.redraw_image()
+            return
 
-        self.app.processed_image = img
-        self.redraw_image()
+        pair = self.app.file_pairs[self.app.current_index]
+        try:
+            filtered_path = ensure_filtered_image(pair["img"], mode)
+            with Image.open(filtered_path) as image:
+                self.app.processed_image = image.copy()
+            self.redraw_image()
+        except Exception as e:
+            self.app.active_filter = "normal"
+            self.app.processed_image = self.app.original_image.copy()
+            self.redraw_image()
+            messagebox.showerror(
+                self.app.t["msg_error_title"],
+                self.app.t["msg_redraw_error"] + f": {e}",
+                parent=self.app.root,
+            )
 
     def redraw_image(self):
         source_img = self.app.processed_image if self.app.processed_image else self.app.original_image
@@ -80,7 +89,7 @@ class CanvasController:
         if not self.app.original_image:
             return
 
-        self.app.MAG_WIDTH, self.app.MAG_HEIGHT = 750, 300
+        self.app.MAG_WIDTH, self.app.MAG_HEIGHT = scaled_size(self.app.root, 750, 300)
         self.app.ZOOM_FACTOR = 2.0
 
         self.app.magnifier_win = tk.Toplevel(self.app.root)

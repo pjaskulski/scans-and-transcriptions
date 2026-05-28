@@ -6,23 +6,22 @@ from google.genai import types
 
 HTR_MODEL_OPTIONS = [
     ("Gemini 3.1 Pro Preview", "gemini-3.1-pro-preview"),
-    ("Gemini 3 Flash Preview", "gemini-3-flash-preview"),
-    ("Gemini 3.1 Flash-Lite Preview", "gemini-3.1-flash-lite-preview"),
+    ("Gemini 3.5 Flash", "gemini-3.5-flash"),
+    ("Gemini 3.1 Flash Lite", "gemini-3.1-flash-lite"),
 ]
 
 ANALYSIS_MODEL_OPTIONS = [
-    ("Gemini 3 Flash Preview", "gemini-3-flash-preview"),
-    ("Gemini 3.1 Flash-Lite Preview", "gemini-3.1-flash-lite-preview"),
+    ("Gemini 3.5 Flash", "gemini-3.5-flash"),
+    ("Gemini 3.1 Flash Lite", "gemini-3.1-flash-lite"),
 ]
 
 BOX_MODEL_OPTIONS = [
-    ("Gemini 3 Pro Image Preview", "gemini-3-pro-image-preview"),
-    ("Gemini 3.1 Flash Image Preview", "gemini-3.1-flash-image-preview"),
+    ("Gemini 3.1 Flash Image", "gemini-3.1-flash-image"),
 ]
 
-DEFAULT_HTR_MODEL = "gemini-3.1-pro-preview"
-DEFAULT_ANALYSIS_MODEL = "gemini-3-flash-preview"
-DEFAULT_BOX_MODEL = "gemini-3-pro-image-preview"
+DEFAULT_HTR_MODEL = "gemini-3.5-flash"
+DEFAULT_ANALYSIS_MODEL = "gemini-3.5-flash"
+DEFAULT_BOX_MODEL = "gemini-3.1-flash-image"
 
 MODEL_OPTIONS = {
     "htr": HTR_MODEL_OPTIONS,
@@ -73,7 +72,7 @@ def normalize_model_selection(task_type: str, code: str | None) -> str:
 def _default_image_config():
     return types.GenerateContentConfig(
         temperature=0,
-        thinkingConfig=types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW),
+        thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW),
         media_resolution=types.MediaResolution.MEDIA_RESOLUTION_HIGH,
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
     )

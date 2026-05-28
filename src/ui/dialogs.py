@@ -13,6 +13,7 @@ from services.gemini_service import (
     model_label_for_code,
     model_labels,
 )
+from ui.window_utils import set_scaled_geometry
 
 
 def open_batch_dialog(app):
@@ -26,7 +27,7 @@ def open_batch_dialog(app):
 
     batch_win = tk.Toplevel(app.root)
     batch_win.title(app.t["batch_win_title"])
-    batch_win.geometry("800x700")
+    set_scaled_geometry(batch_win, 800, 700, parent=app.root)
     batch_win.transient(app.root)
     batch_win.grab_set()
 
@@ -116,7 +117,7 @@ def edit_current_prompt(app):
 
     edit_win = tk.Toplevel(app.root)
     edit_win.title(app.t["edit_win_title"] + f": {os.path.basename(app.current_prompt_path)}")
-    edit_win.geometry("850x600")
+    set_scaled_geometry(edit_win, 850, 600, parent=app.root)
     edit_win.transient(app.root)
     edit_win.grab_set()
 
@@ -186,7 +187,7 @@ def edit_current_prompt(app):
 def open_settings_dialog(app):
     settings_win = tk.Toplevel(app.root)
     settings_win.title(app.t["settings_win_title"])
-    settings_win.geometry("700x560")
+    set_scaled_geometry(settings_win, 700, 560, parent=app.root)
     settings_win.resizable(False, False)
     settings_win.transient(app.root)
     settings_win.grab_set()

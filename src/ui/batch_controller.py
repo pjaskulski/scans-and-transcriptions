@@ -59,7 +59,7 @@ class BatchController:
                 break
 
             pair = self.app.file_pairs[idx]
-            img_path = pair["img"]
+            img_path = self.app.get_transcription_image_path(pair)
             txt_path = pair["txt"]
 
             progress_pct = (i / total) * 100 if total else 100
