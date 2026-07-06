@@ -1,27 +1,36 @@
 # Scans and Transcriptions
 
-Do you have a collection of scanned manuscripts or typescripts? Would you like them transcribed? This simple **desktop** application makes it easy to use Gemini for this purpose. Once the transcriptions are complete, you can review, verify and correct them.
+Do you have a collection of scanned manuscripts or typescripts? Would you like them transcribed? This simple **desktop** application makes it easy to use external OCR/LLM services and local OCR models for this purpose. Once the transcriptions are complete, you can review, verify and correct them.
 
-The process is straightforward: you prepare a folder containing scans of manuscripts, typescripts and old prints, and the application uses various Gemini models to produce the transcriptions. It assists in the verification process by enabling visual comparison of the scans and transcriptions, providing voice recordings and offering named entity recognition (NER) — errors are more likely to occur in proper names. Finally, you will receive a folder containing the scans, the transcription files in TXT format, the MP3 voice recordings and the metadata saved in JSON files.
+The process is straightforward: you prepare a folder containing scans of manuscripts, typescripts and old prints, and the application uses a selected provider to produce the transcriptions. Supported providers are Gemini API, local Ollama models, Mistral OCR API and Datalab Convert API. The application assists in the verification process by enabling visual comparison of the scans and transcriptions, providing named entity recognition (NER) — errors are more likely to occur in proper names — and tools for checking names on the scan. Finally, you will receive a folder containing the scans, the transcription files in TXT format and the metadata saved in JSON files.
 
-Since the application uses models via the API, this is subject to a fee in accordance with Google's current [price list](https://ai.google.dev/gemini-api/docs/pricing). 
+Since the application can use paid API services, transcription may be subject to fees according to the provider's current pricing.
 
-The Gemini Pro 3 model is used for transcription, while the Gemini Pro 3 Image model (also known as Nano Banana Pro) locates proper names on a scan. The application can prepare transcriptions for a single image or a series of files. The Gemini API key should be stored in `config/config.json` under the `api_key` field.
+Gemini and Ollama providers use prompts and can be used for transcription, FIX, NER and BOX features. Mistral OCR and Datalab are OCR/conversion providers used for transcription only; they do not use the application's prompt and are not used for NER, FIX or BOX. The application can prepare transcriptions for a single image or a series of files.
+
+
+## OCR and LLM providers:
+
+  - **Gemini API**: cloud LLM/OCR provider. The Gemini key can be entered in the application settings and is stored in `config/config.json`.
+  - **Ollama**: local provider for open-source vision/OCR models exposed through the local Ollama API. The default API endpoint is `http://localhost:11434/api`, and model names can be entered manually or loaded from a running Ollama instance.
+  - **Mistral OCR API**: cloud OCR provider using the `mistral-ocr-4-0` model by default. The API key is read from the `MISTRAL_API_KEY` environment variable or from the `.env` file in the project root. It returns OCR output as Markdown; prompts are not sent to this provider.
+  - **Datalab Convert API**: cloud document conversion provider. The API key is read from the `DATALAB_API_KEY` environment variable or from the `.env` file in the project root. Output format can be set to `markdown`, `html` or `json`; mode can be set to `fast`, `balanced` or `accurate`.
 
 
 ## Application features:
 
   - **Browsing scans and transcriptions**. The application assumes that the specified directory contains scan files and transcript files with identical names but with the *.txt extension. If a text file is missing, the application will automatically create an empty one.
   - If the folder does not yet contain scan images, you can **import pages from a PDF file**. The application can extract pages from PDF files and save them in the working folder as `img-01.png`, `img-02.png`, etc. This is useful for digitised documents distributed as PDFs, with or without a text layer.
-  - **Creating transcripts using the LLM model** (Gemini Pro 3, internet access required) for the current scan or scan series. For scan series, the application displays all scans in the selected directory and selects those that do not yet have a text transcript file or those with an empty transcript file. This selection can, of course, be changed.
-  - You can perform transcriptions using one of the **predefined prompts** (prompts for Polish documents are currently available), or you can prepare your own prompt.
+  - **Creating transcripts using the selected provider** for the current scan or scan series. For scan series, the application displays all scans in the selected directory and selects those that do not yet have a text transcript file or those with an empty transcript file. This selection can, of course, be changed.
+  - Gemini and Ollama transcriptions use one of the **predefined prompts** (prompts for Polish documents are currently available), or a custom prompt prepared by the user. Mistral OCR and Datalab do not use these prompts.
   - Transcription files are automatically saved when you move to the next/previous file. You can also force a save by pressing the SAVE button.
-  - Transcriptions can be saved as a **bulk text file** or in a **docx file**. For docx files, the application also concatenates broken words and lines into paragraphs. Transcriptions can also be saved in **TEI-XML** format. 
+  - Transcriptions can be saved as a **bulk text file** or in a **docx file**. For docx files, the application also concatenates broken words and lines into paragraphs. Transcriptions can also be saved in **TEI-XML** format. HTML table transcriptions can be merged into a single HTML table.
   - To facilitate verification of transcription accuracy, the application allows you to pan the scan using the left mouse button, **zoom in/out** using the mouse scroll wheel, and display a **magnifying glass** window at a selected location using the right mouse button. 
   - Simple **filters** can be applied to scans, such as contrast enhancement and image inversion.
   - You can adjust the font size in the transcription field.
-  - Due to transcription errors often appearing in proper names (e.g. people, places and institutions), the option to **highlight** such words (**NER** button) has been added to draw attention to them during transcription verification. An experimental function (BOX button) **automatically marks entity names** in the scan. These names are marked with frames, and transcription text is placed above the frame, for a quick assessment of transcription accuracy. The size and position of the frames for entity names can be adjusted. The list of found **entity names can be exported to a CSV file** for further use.
-  - The application **records the cost of all API calls** for the current catalogue, providing information about the date, the model used, the number of tokens used (input and output), and the cost of the call. It also summarizes the cost for the entire current scan catalogue.
+  - Due to transcription errors often appearing in proper names (e.g. people, places and institutions), the option to **highlight** such words (**NER** button) has been added to draw attention to them during transcription verification. An experimental function (BOX button) **automatically marks entity names** in the scan. These names are marked with frames, and transcription text is placed above the frame, for a quick assessment of transcription accuracy. The size and position of the frames for entity names can be adjusted. The list of found **entity names can be exported to a CSV file** for further use. These tools require Gemini or Ollama.
+  - The application **records API usage** for the current catalogue where usage metadata is available, providing information about the date, the model used, the number of tokens used (input and output), and the estimated cost of the call.
+  - API/model calls have a configurable timeout. The final completion message for single-image recognition includes the recognition time.
   - The user interface supports **multiple language versions**. Currently, two languages are defined: **PL** and **EN** (see the localization.json file for definitions). 
 
 
@@ -33,7 +42,7 @@ The application window shows a magnifying glass with a visible enlargement of th
 
 In the left panel containing the scan, you can move the image using the left mouse button, zoom in/out using the mouse wheel and enlarge a fragment using the magnifying glass icon and the right mouse button.
 
-The application window is visible while Gemini is reading the scan (the progress bar is visible at the top of the right panel and the Gemini button is unavailable while the model is processing the image).
+The application window is visible while the selected provider is reading the scan (the progress bar is visible at the top of the right panel and the provider button is unavailable while the model is processing the image).
 
 ![Screen](/doc/screen_scan_transcript_przetwarzanie.png)
 
@@ -52,11 +61,9 @@ List of buttons:
   - Go to the first file
   - Go to the previous file
   - Save changes to the current file
-  - Read a scan with Gemini
-  - Read a series of scans with Gemini
-  - Save the read text for all files in a merged txt file
-  - Save the read text for all files in a merged docx file
-  - Save the read text for all files in a TEI-XML file
+  - Read a scan with the selected provider
+  - Read a series of scans with the selected provider
+  - Open the export menu: merged TXT, merged DOCX, merged HTML table or TEI-XML
   - Go to the next file
   - Go to the last file
 
@@ -74,16 +81,16 @@ You can also close the application using the Ctrl+Q shortcut.
 
 Below is a bar displaying information about the current scan file, including its name, number in the series and the total number of scans in the folder. To the right are the 'A+' and 'A-' buttons, which are used to adjust the font size in the text field. Between the scan file name and the font size adjustment buttons is a search field for the transcription. After entering the required text and pressing Enter, the application highlights the matching text. You can also use the arrow button to start the search. The button with the 'x' symbol removes the highlights and clears the search field. The drop-down menu on the right allows you to change the interface language. Currently, Polish and English versions are available.
 
-The 'NER', 'BOX' and 'CLS' buttons help to verify the transcription. Due to the high frequency of errors in proper names, these can be marked in the transcription text ('NER') and, for comparison, on the scan ('BOX'). The 'CLS' button clears the markings. The 'LEG' button displays a legend with descriptions of the colours used to mark different categories of proper names (people, places and organisations).
+The 'NER', 'BOX' and 'CLS' buttons help to verify the transcription. Due to the high frequency of errors in proper names, these can be marked in the transcription text ('NER') and, for comparison, on the scan ('BOX'). The 'CLS' button clears the markings. The 'LEG' button displays a legend with descriptions of the colours used to mark different categories of proper names (people, places and organisations). NER, BOX, FIX and nominative CSV export require a prompt-capable provider: Gemini or Ollama.
 The 'CSV' button allows you to export all the proper names found in the current catalogue to a CSV file.
-The 'LOG' button displays a list of all API calls, along with their cost.
-The 'FIX' button activates an experimental feature that verifies the existing transcription and highlights sections that may contain errors. This verification process uses the same Gemini model as the original transcription.
+The 'LOG' button displays a list of logged API/model calls. Cost and token counts are shown when the provider returns compatible usage metadata.
+The 'FIX' button activates an experimental feature that verifies the existing transcription and highlights sections that may contain errors. This verification process uses the selected Gemini/Ollama correction model.
   
-**Reading a series of scans** by the Gemini model:
+**Reading a series of scans** by the selected provider:
 
 ![Screen](/doc/screen_scan_transcript_seria.png)
 
-The file batch reading window displays all the scan files in the directory. You can select which files Gemini will read. By default, files for which there is no transcribed text file yet, or only an empty one, are selected. Buttons at the bottom of the window allow you to select or deselect all scans and initiate the transcription process for the selected scans. A progress bar will be displayed during this process (processing multiple files can be time-consuming).
+The file batch reading window displays all the scan files in the directory. You can select which files will be processed. By default, files for which there is no transcribed text file yet, or only an empty one, are selected. Buttons at the bottom of the window allow you to select or deselect all scans and initiate the transcription process for the selected scans. A progress bar will be displayed during this process (processing multiple files can be time-consuming).
 
 Example of a **typescript transcription**:
 
@@ -127,15 +134,15 @@ A 20th-century manuscript in German is shown here.
 
 ![Screen](/doc/screen_htr_ger.png)
 
-Can Gemini read documents from the early 17^(th) century? A specialist should assess the number of errors and distortions – below is an example of a [letter](https://polona2.pl/item/list-marcina-glogowskiego-do-macieja-lubienskiego-8-luty-1608,OTIzNzMwMTA/0/#info:metadata) from 1608 (Marcin Głogowski to Maciej Łubieński).
+Can modern OCR/LLM models read documents from the early 17^(th) century? A specialist should assess the number of errors and distortions – below is an example of a [letter](https://polona2.pl/item/list-marcina-glogowskiego-do-macieja-lubienskiego-8-luty-1608,OTIzNzMwMTA/0/#info:metadata) from 1608 (Marcin Głogowski to Maciej Łubieński).
 
 ![Screen](/doc/screen_glogowski_1608.jpg)
 
 The 'test' folder contains sample scans and transcripts, including scans of manuscripts and typescripts from the 18th, 19th and 20th centuries, as well as old prints from the 18th century. Most of the documents are in Polish.
 
-Please note that access to the Gemini Pro 3 model via API **is subject to a fee**, as stated on the Google pricing page.
+Please note that access to cloud providers via API **may be subject to a fee**, according to each provider's current pricing.
 
-The Gemini model was involved in the application programming :-)
+AI models were involved in the application programming :-)
 
 The project was carried out at the Digital History Lab of the Institute of History at the Polish Academy of Sciences [https://ai.ihpan.edu.pl](https://ai.ihpan.edu.pl).
 
@@ -170,10 +177,29 @@ The scans_windows.zip package contains the python runtime, libraries and an appl
 
 ## Configuration 
 
-API key: enter your Gemini key in the application settings window. It will be saved in `config/config.json` under the `api_key` field.
+Open **Settings** in the application to choose the AI/OCR provider and configure provider-specific options.
+
+**Gemini API**: enter your Gemini key in the application settings window. It will be saved in `config/config.json` under the `api_key` field. In the Gemini tab you can select separate models for transcription, FIX, NER/CSV and BOX.
+
+**Ollama**: select `ollama` as the provider and configure the local API address and model names. The default endpoint is `http://localhost:11434/api`. The application can load the model list from a running Ollama instance. Ollama options also include HTML table post-processing: removing `<thead>` headers and pretty-printing HTML.
+
+**Mistral OCR API**: select `mistral` as the provider. The API key is read from the `MISTRAL_API_KEY` environment variable or from the `.env` file in the project root (the same directory as `main.py`). The default OCR model is `mistral-ocr-4-0`. Mistral OCR does not use the prompt selected in the application. It returns OCR output as Markdown; table format can be set to Markdown or HTML.
+
+**Datalab Convert API**: select `datalab` as the provider. The API key is read from the `DATALAB_API_KEY` environment variable or from the `.env` file in the project root. Output format can be set to `markdown`, `html` or `json`, and mode can be set to `fast`, `balanced` or `accurate`.
+
+Example `.env` file:
+
+```
+MISTRAL_API_KEY=your-mistral-key
+DATALAB_API_KEY=your-datalab-key
+```
 
 **Prompts**: The content of the instructions for the AI model (prompts) should be located in `.txt` files in the `prompt/` directory. This directory already contains sample prompts.
 
-**Settings**: The application stores preferences (font size, user interface language) in `config/config.json`. The Gemini API key is also stored in this file under the `api_key` field.
+Prompts are used by Gemini and Ollama. Mistral OCR and Datalab Convert API do not receive the application's prompt; they work as OCR/conversion endpoints.
+
+**Settings**: The application stores preferences (font size, user interface language, selected provider, provider parameters, timeout and streaming option) in `config/config.json`.
+
+**Timeout and streaming**: The API/model timeout can be configured in settings. Gemini can stream transcription text into the editor while it is being generated. Ollama, Mistral and Datalab currently return a complete response after processing.
 
 **PDF import**: The PDF-to-image import feature is implemented in Python using the `PyMuPDF` library, so it does not require separate system tools such as Poppler or `pdftoppm`.
