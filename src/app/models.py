@@ -20,6 +20,9 @@ class AppConfig:
     ollama_box_model: str = "fredrezones55/chandra-ocr-2:latest"
     ollama_remove_table_headers: bool = False
     ollama_pretty_html: bool = True
+    mistral_ocr_model: str = "mistral-ocr-4-0"
+    mistral_include_blocks: bool = False
+    mistral_table_format: str = "markdown"
     api_timeout_seconds: int = 300
     stream_transcription: bool = True
 

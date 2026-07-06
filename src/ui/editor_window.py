@@ -39,6 +39,11 @@ from services.gemini_service import (
     verify_transcription,
 )
 from services.image_filter_service import ensure_filtered_image, is_generated_filter_image
+from services.mistral_service import (
+    DEFAULT_MISTRAL_OCR_MODEL,
+    get_api_key as get_mistral_api_key,
+    ocr_image as mistral_ocr_image,
+)
 from services.ollama_service import (
     DEFAULT_OLLAMA_BASE_URL,
     DEFAULT_OLLAMA_MODEL,
@@ -148,6 +153,9 @@ class ManuscriptEditor:
         self.ollama_box_model = DEFAULT_OLLAMA_MODEL
         self.ollama_remove_table_headers = False
         self.ollama_pretty_html = True
+        self.mistral_ocr_model = DEFAULT_MISTRAL_OCR_MODEL
+        self.mistral_include_blocks = False
+        self.mistral_table_format = "markdown"
         self.api_timeout_seconds = DEFAULT_API_TIMEOUT_SECONDS
         self.stream_transcription = True
         self.prompt_text = ""
@@ -675,7 +683,7 @@ class ManuscriptEditor:
                 self._apply_diff(current_text, fixed_text)
             return
 
-        if not self.ensure_ai_config():
+        if not self.ensure_non_ocr_ai_config():
             return
 
         # w innym przypadku- trzeba wywołać AI w celu anlizy
@@ -909,7 +917,7 @@ class ManuscriptEditor:
         if not self.file_pairs:
             return
 
-        if not self.ensure_ai_config():
+        if not self.ensure_non_ocr_ai_config():
             return
 
         target_path = filedialog.asksaveasfilename(
@@ -1166,7 +1174,7 @@ class ManuscriptEditor:
             except Exception as e:
                 print(self.t["msg_ner_metadata_error"] + f": {e}")
 
-        if not self.ensure_ai_config():
+        if not self.ensure_non_ocr_ai_config():
             return
 
         # wywołanie AI jeżeli brak pliku json z metadanymi
@@ -1346,7 +1354,7 @@ class ManuscriptEditor:
             except Exception as e:
                 print(e)
 
-        if not self.ensure_ai_config():
+        if not self.ensure_non_ocr_ai_config():
             return
 
         # brak metadanych - wywołanie AI
@@ -1483,6 +1491,9 @@ class ManuscriptEditor:
             self.ollama_box_model = config.ollama_box_model
             self.ollama_remove_table_headers = config.ollama_remove_table_headers
             self.ollama_pretty_html = config.ollama_pretty_html
+            self.mistral_ocr_model = config.mistral_ocr_model
+            self.mistral_include_blocks = config.mistral_include_blocks
+            self.mistral_table_format = config.mistral_table_format
             self.api_timeout_seconds = config.api_timeout_seconds
             self.stream_transcription = config.stream_transcription
             if not self.api_key:
@@ -1525,6 +1536,17 @@ class ManuscriptEditor:
                         self,
                         "ollama_pretty_html",
                         existing_config.ollama_pretty_html,
+                    ),
+                    mistral_ocr_model=getattr(self, "mistral_ocr_model", existing_config.mistral_ocr_model),
+                    mistral_include_blocks=getattr(
+                        self,
+                        "mistral_include_blocks",
+                        existing_config.mistral_include_blocks,
+                    ),
+                    mistral_table_format=getattr(
+                        self,
+                        "mistral_table_format",
+                        existing_config.mistral_table_format,
                     ),
                     api_timeout_seconds=getattr(
                         self,
@@ -2192,7 +2214,12 @@ class ManuscriptEditor:
 
 
     def _ai_button_text(self):
-        return "Ollama" if getattr(self, "llm_provider", "gemini") == "ollama" else "Gemini"
+        provider = getattr(self, "llm_provider", "gemini")
+        if provider == "ollama":
+            return "Ollama"
+        if provider == "mistral":
+            return "Mistral"
+        return "Gemini"
 
 
     def _ollama_timeout_seconds(self):
@@ -2209,6 +2236,14 @@ class ManuscriptEditor:
                 timeout_seconds=self._ollama_timeout_seconds(),
                 remove_table_headers=self.ollama_remove_table_headers,
                 pretty_html=self.ollama_pretty_html,
+            )
+        if self.llm_provider == "mistral":
+            return mistral_ocr_image(
+                image_path,
+                model_name=self.mistral_ocr_model,
+                timeout_seconds=self.api_timeout_seconds,
+                include_blocks=self.mistral_include_blocks,
+                table_format=self.mistral_table_format,
             )
         return transcribe_image(
             self.api_key,
@@ -2259,7 +2294,7 @@ class ManuscriptEditor:
         if not self.file_pairs or self.is_transcribing:
             return
 
-        if not self.prompt_text:
+        if self.llm_provider != "mistral" and not self.prompt_text:
             messagebox.showerror(self.t["prompt_config_error1"],
                                  self.t["prompt_config_error2"],
                                  parent=self.root)
@@ -2296,7 +2331,7 @@ class ManuscriptEditor:
     def _single_worker(self, image_path):
         """ wątek dla pojedynczego pliku z obsługą strumieniowania """
         try:
-            if self.llm_provider == "ollama" or not self.stream_transcription:
+            if self.llm_provider in {"ollama", "mistral"} or not self.stream_transcription:
                 model, response = self._transcribe_current_provider(image_path)
                 if response.usage_metadata:
                     self.root.after(0, lambda: self._log_model_usage(model, response.usage_metadata))
@@ -2387,9 +2422,33 @@ class ManuscriptEditor:
 
     def ensure_ai_config(self):
         """Sprawdza konfigurację dostawcy modelu przed wywołaniem AI."""
-        if getattr(self, "llm_provider", "gemini") == "ollama":
+        provider = getattr(self, "llm_provider", "gemini")
+        if provider == "ollama":
             return True
+        if provider == "mistral":
+            if get_mistral_api_key():
+                return True
+            messagebox.showinfo(
+                self.t["apikey_config_error1"],
+                self.t["mistral_apikey_config_error"],
+                detail=self.t["mistral_apikey_config_detail"],
+                parent=self.root,
+            )
+            self.open_settings_dialog()
+            return bool(get_mistral_api_key())
         return self.ensure_api_key()
+
+
+    def ensure_non_ocr_ai_config(self):
+        """Sprawdza konfigurację funkcji wymagających modelu promptowanego."""
+        if getattr(self, "llm_provider", "gemini") == "mistral":
+            messagebox.showinfo(
+                self.t["msg_warning"],
+                self.t["mistral_ocr_only_info"],
+                parent=self.root,
+            )
+            return False
+        return self.ensure_ai_config()
 
 
     def open_settings_dialog(self):

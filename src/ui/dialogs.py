@@ -13,6 +13,7 @@ from services.gemini_service import (
     model_label_for_code,
     model_labels,
 )
+from services.mistral_service import DEFAULT_MISTRAL_OCR_MODEL
 from services.ollama_service import DEFAULT_OLLAMA_BASE_URL, list_models, normalize_base_url
 from ui.window_utils import set_scaled_geometry
 
@@ -201,16 +202,20 @@ def open_settings_dialog(app):
     general_tab_frame = ttk.Frame(notebook)
     gemini_tab_frame = ttk.Frame(notebook)
     ollama_tab_frame = ttk.Frame(notebook)
+    mistral_tab_frame = ttk.Frame(notebook)
     notebook.add(general_tab_frame, text=app.t["settings_tab_general"])
     notebook.add(gemini_tab_frame, text=app.t["settings_tab_gemini"])
     notebook.add(ollama_tab_frame, text=app.t["settings_tab_ollama"])
+    notebook.add(mistral_tab_frame, text=app.t["settings_tab_mistral"])
 
     general_tab = ScrolledFrame(general_tab_frame, autohide=False)
     gemini_tab = ScrolledFrame(gemini_tab_frame, autohide=False)
     ollama_tab = ScrolledFrame(ollama_tab_frame, autohide=False)
+    mistral_tab = ScrolledFrame(mistral_tab_frame, autohide=False)
     general_tab.pack(fill=BOTH, expand=True, padx=10, pady=10)
     gemini_tab.pack(fill=BOTH, expand=True, padx=10, pady=10)
     ollama_tab.pack(fill=BOTH, expand=True, padx=10, pady=10)
+    mistral_tab.pack(fill=BOTH, expand=True, padx=10, pady=10)
 
     config = load_app_config(app.config_file)
     provider_var = tk.StringVar(value=config.llm_provider)
@@ -226,6 +231,9 @@ def open_settings_dialog(app):
     ollama_box_model_var = tk.StringVar(value=config.ollama_box_model)
     ollama_remove_table_headers_var = tk.BooleanVar(value=config.ollama_remove_table_headers)
     ollama_pretty_html_var = tk.BooleanVar(value=config.ollama_pretty_html)
+    mistral_ocr_model_var = tk.StringVar(value=config.mistral_ocr_model or DEFAULT_MISTRAL_OCR_MODEL)
+    mistral_include_blocks_var = tk.BooleanVar(value=config.mistral_include_blocks)
+    mistral_table_format_var = tk.StringVar(value=config.mistral_table_format)
     api_timeout_var = tk.IntVar(value=config.api_timeout_seconds)
     stream_transcription_var = tk.BooleanVar(value=config.stream_transcription)
 
@@ -233,7 +241,7 @@ def open_settings_dialog(app):
     provider_combo = ttk.Combobox(
         general_tab,
         state="readonly",
-        values=["gemini", "ollama"],
+        values=["gemini", "ollama", "mistral"],
         textvariable=provider_var,
         width=16,
     )
@@ -370,6 +378,58 @@ def open_settings_dialog(app):
         bootstyle="round-toggle",
     ).pack(anchor="w", pady=(0, 10))
 
+    ttk.Separator(mistral_tab).pack(fill=X, pady=(4, 10))
+
+    ttk.Label(mistral_tab, text=app.t["settings_mistral_label"], font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    ttk.Label(
+        mistral_tab,
+        text=app.t["settings_mistral_help"],
+        bootstyle="secondary",
+        font=("Segoe UI", 8),
+        wraplength=680,
+        justify=LEFT,
+    ).pack(anchor="w", pady=(2, 8))
+
+    ttk.Label(mistral_tab, text=app.t["settings_mistral_key_label"]).pack(anchor="w")
+    ttk.Label(
+        mistral_tab,
+        text=app.t["settings_mistral_key_help"],
+        bootstyle="secondary",
+        font=("Segoe UI", 8),
+        wraplength=680,
+        justify=LEFT,
+    ).pack(anchor="w", pady=(2, 10))
+
+    ttk.Label(mistral_tab, text=app.t["settings_mistral_ocr_model_label"]).pack(anchor="w")
+    mistral_model_entry = ttk.Entry(mistral_tab, textvariable=mistral_ocr_model_var, width=72)
+    mistral_model_entry.pack(fill=X, pady=(2, 8))
+
+    ttk.Label(mistral_tab, text=app.t["settings_mistral_table_format_label"]).pack(anchor="w")
+    mistral_table_format_combo = ttk.Combobox(
+        mistral_tab,
+        state="readonly",
+        values=["markdown", "html"],
+        textvariable=mistral_table_format_var,
+        width=16,
+    )
+    mistral_table_format_combo.pack(anchor="w", pady=(2, 10))
+
+    ttk.Checkbutton(
+        mistral_tab,
+        text=app.t["settings_mistral_include_blocks"],
+        variable=mistral_include_blocks_var,
+        bootstyle="round-toggle",
+    ).pack(anchor="w", pady=(0, 10))
+
+    ttk.Label(
+        mistral_tab,
+        text=app.t["settings_mistral_prompt_note"],
+        bootstyle="secondary",
+        font=("Segoe UI", 8),
+        wraplength=680,
+        justify=LEFT,
+    ).pack(anchor="w", pady=(2, 10))
+
     ttk.Separator(general_tab).pack(fill=X, pady=(4, 10))
 
     ttk.Label(general_tab, text=app.t["settings_timeout_label"]).pack(anchor="w")
@@ -412,6 +472,9 @@ def open_settings_dialog(app):
         app.ollama_box_model = ollama_box_model_var.get().strip()
         app.ollama_remove_table_headers = bool(ollama_remove_table_headers_var.get())
         app.ollama_pretty_html = bool(ollama_pretty_html_var.get())
+        app.mistral_ocr_model = mistral_ocr_model_var.get().strip() or DEFAULT_MISTRAL_OCR_MODEL
+        app.mistral_include_blocks = bool(mistral_include_blocks_var.get())
+        app.mistral_table_format = mistral_table_format_var.get() if mistral_table_format_var.get() in {"markdown", "html"} else "markdown"
         try:
             app.api_timeout_seconds = max(30, min(int(api_timeout_var.get()), 3600))
         except (tk.TclError, ValueError):
@@ -442,6 +505,9 @@ def open_settings_dialog(app):
                     ollama_box_model=app.ollama_box_model,
                     ollama_remove_table_headers=app.ollama_remove_table_headers,
                     ollama_pretty_html=app.ollama_pretty_html,
+                    mistral_ocr_model=app.mistral_ocr_model,
+                    mistral_include_blocks=app.mistral_include_blocks,
+                    mistral_table_format=app.mistral_table_format,
                     api_timeout_seconds=app.api_timeout_seconds,
                     stream_transcription=app.stream_transcription,
                 ),

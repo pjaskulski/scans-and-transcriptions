@@ -12,11 +12,16 @@ from services.gemini_service import (
     DEFAULT_HTR_MODEL,
     normalize_model_selection,
 )
+from services.mistral_service import DEFAULT_MISTRAL_OCR_MODEL
 from services.ollama_service import DEFAULT_OLLAMA_BASE_URL, DEFAULT_OLLAMA_MODEL, normalize_base_url
 
 
 def _normalize_provider(provider: str | None) -> str:
-    return provider if provider in {"gemini", "ollama"} else "gemini"
+    return provider if provider in {"gemini", "ollama", "mistral"} else "gemini"
+
+
+def _normalize_mistral_table_format(value: str | None) -> str:
+    return value if value in {"markdown", "html"} else "markdown"
 
 
 def _load_json_file(path):
@@ -76,6 +81,9 @@ def load_app_config(filename: str = "config.json") -> AppConfig:
         or DEFAULT_OLLAMA_MODEL,
         ollama_remove_table_headers=bool(data.get("ollama_remove_table_headers", False)),
         ollama_pretty_html=bool(data.get("ollama_pretty_html", True)),
+        mistral_ocr_model=data.get("mistral_ocr_model", DEFAULT_MISTRAL_OCR_MODEL) or DEFAULT_MISTRAL_OCR_MODEL,
+        mistral_include_blocks=bool(data.get("mistral_include_blocks", False)),
+        mistral_table_format=_normalize_mistral_table_format(data.get("mistral_table_format", "markdown")),
         api_timeout_seconds=timeout_seconds,
         stream_transcription=bool(data.get("stream_transcription", True)),
     )
@@ -102,6 +110,9 @@ def save_app_config(app_config: AppConfig, filename: str = "config.json") -> Non
     data["ollama_box_model"] = app_config.ollama_box_model or DEFAULT_OLLAMA_MODEL
     data["ollama_remove_table_headers"] = bool(app_config.ollama_remove_table_headers)
     data["ollama_pretty_html"] = bool(app_config.ollama_pretty_html)
+    data["mistral_ocr_model"] = app_config.mistral_ocr_model or DEFAULT_MISTRAL_OCR_MODEL
+    data["mistral_include_blocks"] = bool(app_config.mistral_include_blocks)
+    data["mistral_table_format"] = _normalize_mistral_table_format(app_config.mistral_table_format)
     data["api_timeout_seconds"] = max(30, min(int(app_config.api_timeout_seconds), 3600))
     data["stream_transcription"] = bool(app_config.stream_transcription)
     data.pop("tts_lang", None)
