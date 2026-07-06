@@ -13,6 +13,7 @@ from services.gemini_service import (
     model_label_for_code,
     model_labels,
 )
+from services.ollama_service import DEFAULT_OLLAMA_BASE_URL, list_models, normalize_base_url
 from ui.window_utils import set_scaled_geometry
 
 
@@ -187,33 +188,72 @@ def edit_current_prompt(app):
 def open_settings_dialog(app):
     settings_win = tk.Toplevel(app.root)
     settings_win.title(app.t["settings_win_title"])
-    set_scaled_geometry(settings_win, 700, 560, parent=app.root)
-    settings_win.resizable(False, False)
+    set_scaled_geometry(settings_win, 760, 760, parent=app.root)
+    settings_win.resizable(True, True)
     settings_win.transient(app.root)
     settings_win.grab_set()
 
-    container = ttk.Frame(settings_win, padding=15)
-    container.pack(fill=BOTH, expand=True)
+    btn_row = ttk.Frame(settings_win, padding=(15, 10))
+    btn_row.pack(fill=X, side=BOTTOM)
 
-    ttk.Label(container, text=app.t["settings_api_key_label"], font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    notebook = ttk.Notebook(settings_win)
+    notebook.pack(fill=BOTH, expand=True, padx=15, pady=15)
+    general_tab_frame = ttk.Frame(notebook)
+    gemini_tab_frame = ttk.Frame(notebook)
+    ollama_tab_frame = ttk.Frame(notebook)
+    notebook.add(general_tab_frame, text=app.t["settings_tab_general"])
+    notebook.add(gemini_tab_frame, text=app.t["settings_tab_gemini"])
+    notebook.add(ollama_tab_frame, text=app.t["settings_tab_ollama"])
+
+    general_tab = ScrolledFrame(general_tab_frame, autohide=False)
+    gemini_tab = ScrolledFrame(gemini_tab_frame, autohide=False)
+    ollama_tab = ScrolledFrame(ollama_tab_frame, autohide=False)
+    general_tab.pack(fill=BOTH, expand=True, padx=10, pady=10)
+    gemini_tab.pack(fill=BOTH, expand=True, padx=10, pady=10)
+    ollama_tab.pack(fill=BOTH, expand=True, padx=10, pady=10)
+
+    config = load_app_config(app.config_file)
+    provider_var = tk.StringVar(value=config.llm_provider)
+    api_key_var = tk.StringVar(value=config.api_key)
+    htr_model_var = tk.StringVar(value=model_label_for_code("htr", config.htr_model))
+    fix_model_var = tk.StringVar(value=model_label_for_code("fix", config.fix_model))
+    analysis_model_var = tk.StringVar(value=model_label_for_code("analysis", config.analysis_model))
+    box_model_var = tk.StringVar(value=model_label_for_code("box", config.box_model))
+    ollama_base_url_var = tk.StringVar(value=config.ollama_base_url or DEFAULT_OLLAMA_BASE_URL)
+    ollama_htr_model_var = tk.StringVar(value=config.ollama_htr_model)
+    ollama_fix_model_var = tk.StringVar(value=config.ollama_fix_model)
+    ollama_analysis_model_var = tk.StringVar(value=config.ollama_analysis_model)
+    ollama_box_model_var = tk.StringVar(value=config.ollama_box_model)
+    ollama_remove_table_headers_var = tk.BooleanVar(value=config.ollama_remove_table_headers)
+    ollama_pretty_html_var = tk.BooleanVar(value=config.ollama_pretty_html)
+    api_timeout_var = tk.IntVar(value=config.api_timeout_seconds)
+    stream_transcription_var = tk.BooleanVar(value=config.stream_transcription)
+
+    ttk.Label(general_tab, text=app.t["settings_provider_label"], font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    provider_combo = ttk.Combobox(
+        general_tab,
+        state="readonly",
+        values=["gemini", "ollama"],
+        textvariable=provider_var,
+        width=16,
+    )
+    provider_combo.pack(anchor="w", pady=(2, 10))
+    provider_combo.focus_set()
+
+    ttk.Separator(general_tab).pack(fill=X, pady=(4, 10))
+
+    ttk.Label(gemini_tab, text=app.t["settings_api_key_label"], font=("Segoe UI", 10, "bold")).pack(anchor="w")
     ttk.Label(
-        container,
+        gemini_tab,
         text=app.t["settings_api_key_help"],
         bootstyle="secondary",
         font=("Segoe UI", 8),
-        wraplength=560,
+        wraplength=640,
         justify=LEFT,
     ).pack(anchor="w", pady=(2, 10))
 
-    config = load_app_config(app.config_file)
-    api_key_var = tk.StringVar(value=config.api_key)
-    htr_model_var = tk.StringVar(value=model_label_for_code("htr", config.htr_model))
-    analysis_model_var = tk.StringVar(value=model_label_for_code("analysis", config.analysis_model))
-    box_model_var = tk.StringVar(value=model_label_for_code("box", config.box_model))
-
-    entry = ttk.Entry(container, textvariable=api_key_var, width=72, show="*")
+    entry = ttk.Entry(gemini_tab, textvariable=api_key_var, width=72, show="*")
     entry.pack(fill=X, pady=(0, 6))
-    entry.focus_set()
 
     show_var = tk.BooleanVar(value=False)
 
@@ -221,18 +261,18 @@ def open_settings_dialog(app):
         entry.config(show="" if show_var.get() else "*")
 
     ttk.Checkbutton(
-        container,
+        gemini_tab,
         text=app.t["settings_show_key"],
         variable=show_var,
         command=toggle_visibility,
         bootstyle="round-toggle",
     ).pack(anchor="w", pady=(0, 12))
 
-    ttk.Separator(container).pack(fill=X, pady=(4, 10))
+    ttk.Separator(gemini_tab).pack(fill=X, pady=(4, 10))
 
-    ttk.Label(container, text=app.t["settings_models_label"], font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    ttk.Label(gemini_tab, text=app.t["settings_models_label"], font=("Segoe UI", 10, "bold")).pack(anchor="w")
     ttk.Label(
-        container,
+        gemini_tab,
         text=app.t["settings_models_help"],
         bootstyle="secondary",
         font=("Segoe UI", 8),
@@ -240,41 +280,170 @@ def open_settings_dialog(app):
         justify=LEFT,
     ).pack(anchor="w", pady=(2, 10))
 
-    ttk.Label(container, text=app.t["settings_htr_model_label"]).pack(anchor="w")
-    htr_combo = ttk.Combobox(container, state="readonly", values=model_labels("htr"), textvariable=htr_model_var)
-    htr_combo.pack(fill=X, pady=(2, 10))
+    ttk.Label(gemini_tab, text=app.t["settings_htr_model_label"]).pack(anchor="w")
+    htr_combo = ttk.Combobox(gemini_tab, state="readonly", values=model_labels("htr"), textvariable=htr_model_var)
+    htr_combo.pack(fill=X, pady=(2, 8))
 
-    ttk.Label(container, text=app.t["settings_analysis_model_label"]).pack(anchor="w")
+    ttk.Label(gemini_tab, text=app.t["settings_fix_model_label"]).pack(anchor="w")
+    fix_combo = ttk.Combobox(gemini_tab, state="readonly", values=model_labels("fix"), textvariable=fix_model_var)
+    fix_combo.pack(fill=X, pady=(2, 8))
+
+    ttk.Label(gemini_tab, text=app.t["settings_analysis_model_label"]).pack(anchor="w")
     analysis_combo = ttk.Combobox(
-        container,
+        gemini_tab,
         state="readonly",
         values=model_labels("analysis"),
         textvariable=analysis_model_var,
     )
     analysis_combo.pack(fill=X, pady=(2, 10))
 
-    ttk.Label(container, text=app.t["settings_box_model_label"]).pack(anchor="w")
-    box_combo = ttk.Combobox(container, state="readonly", values=model_labels("box"), textvariable=box_model_var)
+    ttk.Label(gemini_tab, text=app.t["settings_box_model_label"]).pack(anchor="w")
+    box_combo = ttk.Combobox(gemini_tab, state="readonly", values=model_labels("box"), textvariable=box_model_var)
     box_combo.pack(fill=X, pady=(2, 10))
 
-    btn_row = ttk.Frame(container)
-    btn_row.pack(fill=X, side=BOTTOM)
+    ttk.Separator(ollama_tab).pack(fill=X, pady=(4, 10))
+
+    ttk.Label(ollama_tab, text=app.t["settings_ollama_label"], font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    ttk.Label(
+        ollama_tab,
+        text=app.t["settings_ollama_help"],
+        bootstyle="secondary",
+        font=("Segoe UI", 8),
+        wraplength=680,
+        justify=LEFT,
+    ).pack(anchor="w", pady=(2, 8))
+
+    ttk.Label(ollama_tab, text=app.t["settings_ollama_base_url_label"]).pack(anchor="w")
+    ollama_base_url_entry = ttk.Entry(ollama_tab, textvariable=ollama_base_url_var, width=72)
+    ollama_base_url_entry.pack(fill=X, pady=(2, 8))
+
+    ollama_model_values = []
+    try:
+        ollama_model_values = list_models(ollama_base_url_var.get(), timeout_seconds=2)
+    except Exception:
+        ollama_model_values = []
+
+    ttk.Label(ollama_tab, text=app.t["settings_htr_model_label"]).pack(anchor="w")
+    ollama_htr_combo = ttk.Combobox(ollama_tab, values=ollama_model_values, textvariable=ollama_htr_model_var)
+    ollama_htr_combo.pack(fill=X, pady=(2, 6))
+
+    ttk.Label(ollama_tab, text=app.t["settings_fix_model_label"]).pack(anchor="w")
+    ollama_fix_combo = ttk.Combobox(ollama_tab, values=ollama_model_values, textvariable=ollama_fix_model_var)
+    ollama_fix_combo.pack(fill=X, pady=(2, 6))
+
+    ttk.Label(ollama_tab, text=app.t["settings_analysis_model_label"]).pack(anchor="w")
+    ollama_analysis_combo = ttk.Combobox(ollama_tab, values=ollama_model_values, textvariable=ollama_analysis_model_var)
+    ollama_analysis_combo.pack(fill=X, pady=(2, 6))
+
+    ttk.Label(ollama_tab, text=app.t["settings_box_model_label"]).pack(anchor="w")
+    ollama_box_combo = ttk.Combobox(ollama_tab, values=ollama_model_values, textvariable=ollama_box_model_var)
+    ollama_box_combo.pack(fill=X, pady=(2, 8))
+
+    def refresh_ollama_models():
+        try:
+            models = list_models(ollama_base_url_var.get(), timeout_seconds=5)
+        except Exception as e:
+            messagebox.showerror(app.t["msg_error_title"], str(e), parent=settings_win)
+            return
+        for combo in [ollama_htr_combo, ollama_fix_combo, ollama_analysis_combo, ollama_box_combo]:
+            combo.config(values=models)
+        messagebox.showinfo(app.t["msg_save_config_title"], app.t["settings_ollama_models_loaded"], parent=settings_win)
+
+    ttk.Button(
+        ollama_tab,
+        text=app.t["settings_ollama_refresh_models"],
+        command=refresh_ollama_models,
+        bootstyle="outline-secondary",
+    ).pack(anchor="w", pady=(0, 10))
+
+    ttk.Checkbutton(
+        ollama_tab,
+        text=app.t["settings_ollama_remove_table_headers"],
+        variable=ollama_remove_table_headers_var,
+        bootstyle="round-toggle",
+    ).pack(anchor="w", pady=(0, 10))
+
+    ttk.Checkbutton(
+        ollama_tab,
+        text=app.t["settings_ollama_pretty_html"],
+        variable=ollama_pretty_html_var,
+        bootstyle="round-toggle",
+    ).pack(anchor="w", pady=(0, 10))
+
+    ttk.Separator(general_tab).pack(fill=X, pady=(4, 10))
+
+    ttk.Label(general_tab, text=app.t["settings_timeout_label"]).pack(anchor="w")
+    timeout_spin = ttk.Spinbox(
+        general_tab,
+        from_=30,
+        to=3600,
+        increment=30,
+        textvariable=api_timeout_var,
+        width=10,
+    )
+    timeout_spin.pack(anchor="w", pady=(2, 4))
+    ttk.Label(
+        general_tab,
+        text=app.t["settings_timeout_help"],
+        bootstyle="secondary",
+        font=("Segoe UI", 8),
+        wraplength=640,
+        justify=LEFT,
+    ).pack(anchor="w", pady=(0, 10))
+
+    ttk.Checkbutton(
+        general_tab,
+        text=app.t["settings_stream_transcription"],
+        variable=stream_transcription_var,
+        bootstyle="round-toggle",
+    ).pack(anchor="w", pady=(0, 10))
 
     def save_settings():
+        app.llm_provider = provider_var.get()
         app.api_key = api_key_var.get().strip()
         app.htr_model = model_code_for_label("htr", htr_model_var.get())
+        app.fix_model = model_code_for_label("fix", fix_model_var.get())
         app.analysis_model = model_code_for_label("analysis", analysis_model_var.get())
         app.box_model = model_code_for_label("box", box_model_var.get())
+        app.ollama_base_url = normalize_base_url(ollama_base_url_var.get())
+        app.ollama_htr_model = ollama_htr_model_var.get().strip()
+        app.ollama_fix_model = ollama_fix_model_var.get().strip()
+        app.ollama_analysis_model = ollama_analysis_model_var.get().strip()
+        app.ollama_box_model = ollama_box_model_var.get().strip()
+        app.ollama_remove_table_headers = bool(ollama_remove_table_headers_var.get())
+        app.ollama_pretty_html = bool(ollama_pretty_html_var.get())
+        try:
+            app.api_timeout_seconds = max(30, min(int(api_timeout_var.get()), 3600))
+        except (tk.TclError, ValueError):
+            messagebox.showerror(
+                app.t["msg_error_title"],
+                app.t["settings_timeout_error"],
+                parent=settings_win,
+            )
+            return
+        app.stream_transcription = bool(stream_transcription_var.get())
         try:
             save_app_config(
                 AppConfig(
                     font_size=app.font_size,
                     current_lang=app.current_lang,
                     default_prompt=app.default_prompt,
+                    last_folder=getattr(app, "last_folder", ""),
+                    llm_provider=app.llm_provider,
                     api_key=app.api_key,
                     htr_model=app.htr_model,
+                    fix_model=app.fix_model,
                     analysis_model=app.analysis_model,
                     box_model=app.box_model,
+                    ollama_base_url=app.ollama_base_url,
+                    ollama_htr_model=app.ollama_htr_model,
+                    ollama_fix_model=app.ollama_fix_model,
+                    ollama_analysis_model=app.ollama_analysis_model,
+                    ollama_box_model=app.ollama_box_model,
+                    ollama_remove_table_headers=app.ollama_remove_table_headers,
+                    ollama_pretty_html=app.ollama_pretty_html,
+                    api_timeout_seconds=app.api_timeout_seconds,
+                    stream_transcription=app.stream_transcription,
                 ),
                 app.config_file,
             )

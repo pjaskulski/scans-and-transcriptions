@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+import re
 from pathlib import Path
 
 from docx import Document
@@ -22,6 +23,77 @@ def export_txt(scan_files: list[dict], target_path: str) -> None:
 
     with open(target_path, "w", encoding="utf-8") as handle:
         handle.write("\n\n".join(merged_content))
+
+
+def _find_html_tables(text: str) -> list[tuple[str, str]]:
+    return re.findall(r"<table\b([^>]*)>(.*?)</table>", text, flags=re.IGNORECASE | re.DOTALL)
+
+
+def _find_table_header(table_body: str) -> str:
+    match = re.search(r"<thead\b[^>]*>.*?</thead>", table_body, flags=re.IGNORECASE | re.DOTALL)
+    return match.group(0).strip() if match else ""
+
+
+def _find_table_rows(table_body: str) -> list[str]:
+    body_without_headers = re.sub(r"<thead\b[^>]*>.*?</thead>", "", table_body, flags=re.IGNORECASE | re.DOTALL)
+    tbody_matches = re.findall(r"<tbody\b[^>]*>(.*?)</tbody>", body_without_headers, flags=re.IGNORECASE | re.DOTALL)
+    row_sources = tbody_matches if tbody_matches else [body_without_headers]
+    rows = []
+    for source in row_sources:
+        rows.extend(
+            row.strip()
+            for row in re.findall(r"<tr\b[^>]*>.*?</tr>", source, flags=re.IGNORECASE | re.DOTALL)
+            if row.strip()
+        )
+    return rows
+
+
+def export_merged_html_table(scan_files: list[dict], target_path: str) -> int:
+    table_attrs = ""
+    table_header = ""
+    table_rows = []
+
+    for pair in scan_files:
+        txt_path = pair["txt"]
+        if not os.path.exists(txt_path):
+            continue
+
+        with open(txt_path, "r", encoding="utf-8") as handle:
+            tables = _find_html_tables(handle.read())
+
+        for attrs, table_body in tables:
+            if not table_attrs:
+                table_attrs = attrs.strip()
+            if not table_header:
+                table_header = _find_table_header(table_body)
+            table_rows.extend(_find_table_rows(table_body))
+
+    if not table_rows:
+        raise ValueError("Nie znaleziono wierszy tabel HTML w transkrypcjach.")
+
+    table_open = f"<table {table_attrs}>".replace("  ", " ").strip() if table_attrs else "<table>"
+    lines = [
+        "<!doctype html>",
+        '<html lang="pl">',
+        "<head>",
+        '  <meta charset="utf-8">',
+        "</head>",
+        "<body>",
+        table_open,
+    ]
+    if table_header:
+        lines.append(table_header)
+    lines.append("<tbody>")
+    lines.extend(table_rows)
+    lines.append("</tbody>")
+    lines.append("</table>")
+    lines.append("</body>")
+    lines.append("</html>")
+
+    with open(target_path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines))
+
+    return len(table_rows)
 
 
 def export_docx(scan_files: list[dict], target_path: str) -> None:

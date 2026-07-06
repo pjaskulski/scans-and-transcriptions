@@ -1,0 +1,2 @@
+Read the table from the image and save it in HTML format. Table has EXACTLY 10 columns. The first column contains the name of the town and a dash – enter the dash next to the name in the same column. For fractions, enter them as Unicode characters, e.g., ¾, ½.
+Read only the body of the table, do not read the header.

@@ -1,6 +1,10 @@
+import logging
 import os
 import threading
 from tkinter import messagebox
+
+
+logger = logging.getLogger(__name__)
 
 
 class BatchController:
@@ -64,15 +68,17 @@ class BatchController:
 
             progress_pct = (i / total) * 100 if total else 100
             msg = self.app.t["batch_process_text"] + f" [{i+1}/{total}]: {pair['name']}..."
+            logger.info("Batch transcription started for %s [%s/%s]", pair["name"], i + 1, total)
             self.app.root.after(0, lambda m=msg, v=progress_pct: self.update_batch_ui(m, v))
 
             try:
                 result_text = self.app._call_gemini_api(img_path)
                 with open(txt_path, "w", encoding="utf-8") as f:
                     f.write(result_text + "\n")
+                logger.info("Batch transcription finished for %s [%s/%s]", pair["name"], i + 1, total)
             except Exception as e:
                 errors += 1
-                print(self.app.t["batch_worker_file_error"] + f" {pair['name']}: {e}")
+                logger.exception("%s %s: %s", self.app.t["batch_worker_file_error"], pair["name"], e)
 
             self.app.root.after(0, self.refresh_batch_list_ui)
 

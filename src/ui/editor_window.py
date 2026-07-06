@@ -2,6 +2,7 @@
 import os
 import re
 import json
+import logging
 import threading
 import warnings
 import tkinter as tk
@@ -18,6 +19,7 @@ from services.config_service import load_app_config, load_localization, save_app
 from services.export_service import (
     collect_ner_rows,
     export_docx,
+    export_merged_html_table,
     export_tei,
     export_txt,
     unique_ner_names,
@@ -25,7 +27,9 @@ from services.export_service import (
 )
 from services.gemini_service import (
     DEFAULT_ANALYSIS_MODEL,
+    DEFAULT_API_TIMEOUT_SECONDS,
     DEFAULT_BOX_MODEL,
+    DEFAULT_FIX_MODEL,
     DEFAULT_HTR_MODEL,
     build_nominative_map,
     extract_entities,
@@ -35,6 +39,16 @@ from services.gemini_service import (
     verify_transcription,
 )
 from services.image_filter_service import ensure_filtered_image, is_generated_filter_image
+from services.ollama_service import (
+    DEFAULT_OLLAMA_BASE_URL,
+    DEFAULT_OLLAMA_MODEL,
+    build_nominative_map as ollama_build_nominative_map,
+    extract_entities as ollama_extract_entities,
+    locate_entities as ollama_locate_entities,
+    stream_transcribe_image as ollama_stream_transcribe_image,
+    transcribe_image as ollama_transcribe_image,
+    verify_transcription as ollama_verify_transcription,
+)
 from services.prompt_service import DEFAULT_PROMPT_TEMPLATE, ensure_prompt_dir, read_default_prompt, read_prompt
 from services.pdf_service import can_extract_pdf_pages, extract_pdf_pages
 from services.text_service import build_diff_ranges, prepare_text_for_tei, tag_entities_tei, tk_index_from_offset
@@ -51,6 +65,7 @@ from ui.window_utils import set_scaled_geometry
 # Aplikacja pracuje na lokalnych, zaufanych skanach archiwalnych, które bywają bardzo duże.
 Image.MAX_IMAGE_PIXELS = None
 warnings.simplefilter("ignore", Image.DecompressionBombWarning)
+logger = logging.getLogger(__name__)
 
 class ToolTip:
     """ klasa tworząca dymek z podpowiedzią z opóźnieniem (500ms) """
@@ -119,15 +134,27 @@ class ManuscriptEditor:
         self.languages = []
         self.load_lang()
 
+        self.llm_provider = "gemini"
         self.api_key = ""
         self.default_prompt = ""
         self.htr_model = DEFAULT_HTR_MODEL
+        self.fix_model = DEFAULT_FIX_MODEL
         self.analysis_model = DEFAULT_ANALYSIS_MODEL
         self.box_model = DEFAULT_BOX_MODEL
+        self.ollama_base_url = DEFAULT_OLLAMA_BASE_URL
+        self.ollama_htr_model = DEFAULT_OLLAMA_MODEL
+        self.ollama_fix_model = DEFAULT_OLLAMA_MODEL
+        self.ollama_analysis_model = DEFAULT_OLLAMA_MODEL
+        self.ollama_box_model = DEFAULT_OLLAMA_MODEL
+        self.ollama_remove_table_headers = False
+        self.ollama_pretty_html = True
+        self.api_timeout_seconds = DEFAULT_API_TIMEOUT_SECONDS
+        self.stream_transcription = True
         self.prompt_text = ""
         self.prompt_filename_var = tk.StringVar(master=self.root, value="Brak (wybierz plik)")
         self.current_folder_var = tk.StringVar(master=self.root, value="Nie wybrano katalogu")
         self.current_folder_path = ""
+        self.last_folder = ""
         self.current_prompt_path = None
 
         self.config_file = "config.json"
@@ -429,6 +456,28 @@ class ManuscriptEditor:
                    bootstyle="outline-secondary")
         self.btn_prev.pack(side=LEFT, fill=X, expand=True, padx=2)
 
+        self.goto_frame = ttk.Frame(self.toolbar)
+        self.goto_frame.pack(side=LEFT, padx=5)
+        self.goto_label = ttk.Label(self.goto_frame, text=self.t["goto_label"])
+        self.goto_label.pack(side=LEFT, padx=(0, 3))
+        self.goto_var = tk.StringVar(master=self.root)
+        self.goto_spin = ttk.Spinbox(
+            self.goto_frame,
+            from_=1,
+            to=1,
+            textvariable=self.goto_var,
+            width=5,
+        )
+        self.goto_spin.pack(side=LEFT, padx=(0, 3))
+        self.goto_spin.bind("<Return>", lambda _event: self.goto_file())
+        self.btn_goto = ttk.Button(
+            self.goto_frame,
+            text=self.t["btn_goto"],
+            command=self.goto_file,
+            bootstyle="outline-secondary",
+        )
+        self.btn_goto.pack(side=LEFT)
+
         self.btn_save = ttk.Button(self.toolbar,
                    text=self.t["btn_save"],
                    command=self.save_current_text,
@@ -440,7 +489,7 @@ class ManuscriptEditor:
         frame_ai.pack(side=LEFT, fill=X, expand=True)
 
         self.btn_ai = ttk.Button(frame_ai,
-                                 text="Gemini",
+                                 text=self._ai_button_text(),
                                  command=self.start_ai_transcription,
                                  bootstyle="danger")
         self.btn_ai.pack(side=LEFT, fill=X, expand=True, padx=2)
@@ -453,23 +502,13 @@ class ManuscriptEditor:
         self.btn_seria.pack(side=LEFT, fill=X, expand=True, padx=2)
 
         # zapis wyników
-        self.btn_txt = ttk.Button(self.toolbar,
-                   text="TXT",
-                   command=self.export_all_data,
-                   bootstyle="info")
-        self.btn_txt.pack(side=LEFT, fill=X, expand=True, padx=5)
-
-        self.btn_docx = ttk.Button(self.toolbar,
-                   text="DOCX",
-                   command=self.export_all_data_docx,
-                   bootstyle="info")
-        self.btn_docx.pack(side=LEFT, fill=X, expand=True, padx=5)
-
-        self.btn_tei = ttk.Button(self.toolbar,
-                   text="TEI",
-                   command=self.export_to_tei_xml,
-                   bootstyle="info")
-        self.btn_tei.pack(side=LEFT, fill=X, expand=True, padx=5)
+        self.btn_export = ttk.Menubutton(
+            self.toolbar,
+            text=self.t["btn_export"],
+            bootstyle="info",
+        )
+        self.btn_export.pack(side=LEFT, fill=X, expand=True, padx=5)
+        self._build_export_menu()
 
         self.btn_last = ttk.Button(self.toolbar,
                    text=">|",
@@ -546,14 +585,13 @@ class ManuscriptEditor:
         self.btn_verify_tooltip = ToolTip(self.btn_verify, self.t["tt_btn_verify"])
         self.btn_ai_tooltip = ToolTip(self.btn_ai, self.t["tt_btn_ai"])
         self.btn_seria_tooltip = ToolTip(self.btn_seria, self.t["tt_btn_seria"])
-        self.btn_txt_tooltip = ToolTip(self.btn_txt, self.t["tt_btn_txt"])
-        self.btn_docx_tooltip = ToolTip(self.btn_docx, self.t["tt_btn_docx"])
-        self.btn_tei_tooltip = ToolTip(self.btn_tei, self.t["tt_btn_tei"])
+        self.btn_export_tooltip = ToolTip(self.btn_export, self.t["tt_btn_export"])
         self.btn_save_tooltip = ToolTip(self.btn_save, self.t["tt_btn_save"])
         self.btn_first_tooltip = ToolTip(self.btn_first, self.t["tt_btn_first"])
         self.btn_last_tooltip = ToolTip(self.btn_last, self.t["tt_btn_last"])
         self.btn_prev_tooltip = ToolTip(self.btn_prev, self.t["tt_btn_prev"])
         self.btn_next_tooltip = ToolTip(self.btn_next, self.t["tt_btn_next"])
+        self.btn_goto_tooltip = ToolTip(self.btn_goto, self.t["tt_btn_goto"])
         self.btn_bgfont_tooltip = ToolTip(self.btn_bgfont, self.t["tt_btn_bgfont"])
         self.btn_smfont_tooltip = ToolTip(self.btn_smfont, self.t["tt_btn_smfont"])
         self.btn_search_tooltip = ToolTip(self.btn_search, self.t["tt_btn_search"])
@@ -562,7 +600,16 @@ class ManuscriptEditor:
         self.btn_settings_tooltip = ToolTip(self.btn_settings, self.t["tt_btn_settings"])
         self.btn_pdf_import_tooltip = ToolTip(self.btn_pdf_import, self.t["tt_btn_pdf_import"])
 
-        self.select_folder()
+        self.root.after(100, self.load_startup_folder)
+
+
+    def _build_export_menu(self):
+        self.export_menu = tk.Menu(self.btn_export, tearoff=0)
+        self.export_menu.add_command(label=self.t["export_menu_txt"], command=self.export_all_data)
+        self.export_menu.add_command(label=self.t["export_menu_docx"], command=self.export_all_data_docx)
+        self.export_menu.add_command(label=self.t["export_menu_html_table"], command=self.export_merged_html_table)
+        self.export_menu.add_command(label=self.t["export_menu_tei"], command=self.export_to_tei_xml)
+        self.btn_export.configure(menu=self.export_menu)
 
 
     def create_new_prompt(self):
@@ -628,7 +675,7 @@ class ManuscriptEditor:
                 self._apply_diff(current_text, fixed_text)
             return
 
-        if not self.ensure_api_key():
+        if not self.ensure_ai_config():
             return
 
         # w innym przypadku- trzeba wywołać AI w celu anlizy
@@ -645,15 +692,25 @@ class ManuscriptEditor:
 
     def _verify_worker(self, img_path, original_text):
         try:
-            model, response = verify_transcription(
-                self.api_key,
-                img_path,
-                original_text,
-                model_name=self.htr_model,
-            )
+            if self.llm_provider == "ollama":
+                model, response = ollama_verify_transcription(
+                    img_path,
+                    original_text,
+                    model_name=self.ollama_fix_model,
+                    base_url=self.ollama_base_url,
+                    timeout_seconds=self._ollama_timeout_seconds(),
+                )
+            else:
+                model, response = verify_transcription(
+                    self.api_key,
+                    img_path,
+                    original_text,
+                    model_name=self.fix_model,
+                    timeout_seconds=self.api_timeout_seconds,
+                )
 
             if response.usage_metadata:
-                self.root.after(0, lambda: self._log_api_usage(model, response.usage_metadata))
+                self.root.after(0, lambda: self._log_model_usage(model, response.usage_metadata))
 
             if response.text:
                 fixed_text = response.text.strip()
@@ -666,7 +723,7 @@ class ManuscriptEditor:
 
         except Exception as e:
             self.root.after(0, self._verify_finished)
-            print("Błąd weryfikacji" + f": {e}")
+            logger.exception("Błąd weryfikacji: %s", e)
         finally:
             self.root.after(0, self._verify_finished)
 
@@ -761,6 +818,10 @@ class ManuscriptEditor:
         self.btn_settings.config(text=self.t["btn_settings"])
         self.btn_pdf_import.config(text=self.t["btn_pdf_import"])
         self.btn_seria.config(text=self.t["btn_batch"])
+        self.btn_export.config(text=self.t["btn_export"])
+        self._build_export_menu()
+        self.goto_label.config(text=self.t["goto_label"])
+        self.btn_goto.config(text=self.t["btn_goto"])
         self.btn_prompt_change.config(text=self.t["btn_prompt"])
         self.btn_edit_prompt.config(text=self.t["btn_edit_prompt"])
         self.btn_new_prompt.config(text=self.t["btn_new_prompt"])
@@ -778,13 +839,13 @@ class ManuscriptEditor:
         self.btn_csv_tooltip.update_text(self.t["tt_btn_csv"])
         self.btn_ai_tooltip.update_text(self.t["tt_btn_ai"])
         self.btn_seria_tooltip.update_text(self.t["tt_btn_seria"])
-        self.btn_txt_tooltip.update_text(self.t["tt_btn_txt"])
-        self.btn_docx_tooltip.update_text(self.t["tt_btn_docx"])
+        self.btn_export_tooltip.update_text(self.t["tt_btn_export"])
         self.btn_save_tooltip.update_text(self.t["tt_btn_save"])
         self.btn_first_tooltip.update_text(self.t["tt_btn_first"])
         self.btn_last_tooltip.update_text(self.t["tt_btn_last"])
         self.btn_prev_tooltip.update_text(self.t["tt_btn_prev"])
         self.btn_next_tooltip.update_text(self.t["tt_btn_next"])
+        self.btn_goto_tooltip.update_text(self.t["tt_btn_goto"])
         self.btn_bgfont_tooltip.update_text(self.t["tt_btn_bgfont"])
         self.btn_smfont_tooltip.update_text(self.t["tt_btn_smfont"])
         self.btn_search_tooltip.update_text(self.t["tt_btn_search"])
@@ -848,7 +909,7 @@ class ManuscriptEditor:
         if not self.file_pairs:
             return
 
-        if not self.ensure_api_key():
+        if not self.ensure_ai_config():
             return
 
         target_path = filedialog.asksaveasfilename(
@@ -880,13 +941,22 @@ class ManuscriptEditor:
     def _ner_export_worker(self, names_list, full_records, target_path):
         """ wątek AI: mianownik + zapis 5 kolumn do CSV """
         try:
-            nominative_map, usage_entries = build_nominative_map(
-                self.api_key,
-                names_list,
-                model_name=self.analysis_model,
-            )
+            if self.llm_provider == "ollama":
+                nominative_map, usage_entries = ollama_build_nominative_map(
+                    names_list,
+                    model_name=self.ollama_analysis_model,
+                    base_url=self.ollama_base_url,
+                    timeout_seconds=self._ollama_timeout_seconds(),
+                )
+            else:
+                nominative_map, usage_entries = build_nominative_map(
+                    self.api_key,
+                    names_list,
+                    model_name=self.analysis_model,
+                    timeout_seconds=self.api_timeout_seconds,
+                )
             for model, usage_metadata in usage_entries:
-                self._log_api_usage(model, usage_metadata)
+                self._log_model_usage(model, usage_metadata)
 
             write_ner_csv(
                 target_path,
@@ -906,7 +976,7 @@ class ManuscriptEditor:
         except Exception as e:
             self.root.after(0, lambda: messagebox.showerror(self.t["msg_csv_error_text"], str(e)))
         finally:
-            self.root.after(0, lambda: self.btn_ai.config(state="normal", text="Gemini"))
+            self.root.after(0, lambda: self.btn_ai.config(state="normal", text=self._ai_button_text()))
 
 
     def update_active_line_highlight(self, event=None):
@@ -1096,7 +1166,7 @@ class ManuscriptEditor:
             except Exception as e:
                 print(self.t["msg_ner_metadata_error"] + f": {e}")
 
-        if not self.ensure_api_key():
+        if not self.ensure_ai_config():
             return
 
         # wywołanie AI jeżeli brak pliku json z metadanymi
@@ -1115,14 +1185,27 @@ class ManuscriptEditor:
         """ dodatkowa analiza tekstu przez Gemini w celu uzyskania listy nazw własnych:
             osoby, miejsca, instytucje """
         try:
-            print('NER: generowanie wyników')
-            model, response = extract_entities(self.api_key, text, model_name=self.analysis_model)
+            logger.info("NER: generowanie wyników")
+            if self.llm_provider == "ollama":
+                model, response = ollama_extract_entities(
+                    text,
+                    model_name=self.ollama_analysis_model,
+                    base_url=self.ollama_base_url,
+                    timeout_seconds=self._ollama_timeout_seconds(),
+                )
+            else:
+                model, response = extract_entities(
+                    self.api_key,
+                    text,
+                    model_name=self.analysis_model,
+                    timeout_seconds=self.api_timeout_seconds,
+                )
 
             if response.usage_metadata:
-                self._log_api_usage(model, response.usage_metadata)
+                self._log_model_usage(model, response.usage_metadata)
 
             if response.text:
-                print("NER: wyniki przygotowane")
+                logger.info("NER: wyniki przygotowane")
                 json_str = response.text.replace("```json", "").replace("```", "").strip()
                 entities_dict = json.loads(json_str)
                 self.last_entities = entities_dict
@@ -1263,7 +1346,7 @@ class ManuscriptEditor:
             except Exception as e:
                 print(e)
 
-        if not self.ensure_api_key():
+        if not self.ensure_ai_config():
             return
 
         # brak metadanych - wywołanie AI
@@ -1285,15 +1368,25 @@ class ManuscriptEditor:
                 for name in names:
                     entities_to_find.append((name, cat))
 
-            model, response = locate_entities(
-                self.api_key,
-                self.get_transcription_image_path(current_pair),
-                entities_to_find,
-                model_name=self.box_model,
-            )
+            if self.llm_provider == "ollama":
+                model, response = ollama_locate_entities(
+                    self.get_transcription_image_path(current_pair),
+                    entities_to_find,
+                    model_name=self.ollama_box_model,
+                    base_url=self.ollama_base_url,
+                    timeout_seconds=self._ollama_timeout_seconds(),
+                )
+            else:
+                model, response = locate_entities(
+                    self.api_key,
+                    self.get_transcription_image_path(current_pair),
+                    entities_to_find,
+                    model_name=self.box_model,
+                    timeout_seconds=self.api_timeout_seconds,
+                )
 
             if response.usage_metadata:
-                self._log_api_usage(model, response.usage_metadata)
+                self._log_model_usage(model, response.usage_metadata)
 
             if response.text:
                 coordinates_data = self._parse_coordinates_response(response.text)
@@ -1377,9 +1470,21 @@ class ManuscriptEditor:
             self.font_size = config.font_size
             self.current_lang = config.current_lang
             self.default_prompt = config.default_prompt
+            self.last_folder = config.last_folder
+            self.llm_provider = config.llm_provider
             self.htr_model = config.htr_model
+            self.fix_model = config.fix_model
             self.analysis_model = config.analysis_model
             self.box_model = config.box_model
+            self.ollama_base_url = config.ollama_base_url
+            self.ollama_htr_model = config.ollama_htr_model
+            self.ollama_fix_model = config.ollama_fix_model
+            self.ollama_analysis_model = config.ollama_analysis_model
+            self.ollama_box_model = config.ollama_box_model
+            self.ollama_remove_table_headers = config.ollama_remove_table_headers
+            self.ollama_pretty_html = config.ollama_pretty_html
+            self.api_timeout_seconds = config.api_timeout_seconds
+            self.stream_transcription = config.stream_transcription
             if not self.api_key:
                 self.api_key = config.api_key
         except Exception as e:
@@ -1395,10 +1500,42 @@ class ManuscriptEditor:
                     font_size=self.font_size,
                     current_lang=self.current_lang,
                     default_prompt=self.default_prompt,
+                    last_folder=getattr(self, "last_folder", existing_config.last_folder),
+                    llm_provider=getattr(self, "llm_provider", existing_config.llm_provider),
                     api_key=existing_config.api_key,
                     htr_model=getattr(self, "htr_model", existing_config.htr_model),
+                    fix_model=getattr(self, "fix_model", existing_config.fix_model),
                     analysis_model=getattr(self, "analysis_model", existing_config.analysis_model),
                     box_model=getattr(self, "box_model", existing_config.box_model),
+                    ollama_base_url=getattr(self, "ollama_base_url", existing_config.ollama_base_url),
+                    ollama_htr_model=getattr(self, "ollama_htr_model", existing_config.ollama_htr_model),
+                    ollama_fix_model=getattr(self, "ollama_fix_model", existing_config.ollama_fix_model),
+                    ollama_analysis_model=getattr(
+                        self,
+                        "ollama_analysis_model",
+                        existing_config.ollama_analysis_model,
+                    ),
+                    ollama_box_model=getattr(self, "ollama_box_model", existing_config.ollama_box_model),
+                    ollama_remove_table_headers=getattr(
+                        self,
+                        "ollama_remove_table_headers",
+                        existing_config.ollama_remove_table_headers,
+                    ),
+                    ollama_pretty_html=getattr(
+                        self,
+                        "ollama_pretty_html",
+                        existing_config.ollama_pretty_html,
+                    ),
+                    api_timeout_seconds=getattr(
+                        self,
+                        "api_timeout_seconds",
+                        existing_config.api_timeout_seconds,
+                    ),
+                    stream_transcription=getattr(
+                        self,
+                        "stream_transcription",
+                        existing_config.stream_transcription,
+                    ),
                 ),
                 self.config_file,
             )
@@ -1454,12 +1591,29 @@ class ManuscriptEditor:
                                      parent=self.root)
 
 
+    def _display_folder_path(self, folder_path):
+        if len(folder_path) > 40:
+            return "..." + folder_path[-37:]
+        return folder_path
+
+
+    def load_startup_folder(self):
+        """Wczytuje ostatni katalog albo otwiera dialog wyboru przy pierwszym starcie."""
+        if self.last_folder and os.path.isdir(self.last_folder):
+            self.current_folder_path = self.last_folder
+            self.current_folder_var.set(self._display_folder_path(self.last_folder))
+            self.load_file_list(self.last_folder)
+            return
+
+        self.select_folder()
+
+
     def select_folder(self):
         """ wybór folderu """
         if self.is_transcribing:
             return
 
-        initial_dir = os.getcwd() # domyślnie bieżący katalog
+        initial_dir = self.last_folder if self.last_folder and os.path.isdir(self.last_folder) else os.getcwd()
 
         folder_path = filedialog.askdirectory(
             title=self.t["select_folder_title"],
@@ -1469,10 +1623,9 @@ class ManuscriptEditor:
 
         if folder_path:
             self.current_folder_path = folder_path
-            display_path = folder_path
-            if len(display_path) > 40:
-                display_path = "..." + display_path[-37:] # ostatnie 37 znaków
-            self.current_folder_var.set(display_path)
+            self.last_folder = folder_path
+            self.current_folder_var.set(self._display_folder_path(folder_path))
+            self.save_config()
 
             # załadowanie plików
             self.load_file_list(folder_path)
@@ -1482,6 +1635,8 @@ class ManuscriptEditor:
         """ ładowanie listy plików skanów ze wskazanego folderu"""
         try:
             self.current_folder_path = folder
+            self.last_folder = folder
+            self.current_folder_var.set(self._display_folder_path(folder))
             all_files = os.listdir(folder)
             images = [
                 f for f in all_files
@@ -1529,10 +1684,13 @@ class ManuscriptEditor:
                 self.canvas.delete("all")
                 self.text_area.delete(1.0, tk.END)
                 self.file_info_var.set(self.t["scan_folder_empty"])
+                self._update_goto_control()
                 return
 
             self.current_index = 0
+            self._update_goto_control()
             self.load_pair(0)
+            self.root.after(100, self.fit_to_width)
         except Exception as e:
             messagebox.showerror(self.t["msg_error_title"],
                                  self.t["msg_folder_scan_error"] + f": {e}", parent=self.root)
@@ -1649,6 +1807,7 @@ class ManuscriptEditor:
         if not self.file_pairs:
             return
         pair = self.file_pairs[index]
+        self._update_goto_control()
 
         # reset
         self.last_entities = []
@@ -1793,6 +1952,60 @@ class ManuscriptEditor:
             self.file_info_var.set(f"[{self.current_index + 1}/{len(self.file_pairs)}] {pair['name']}")
 
 
+    def _update_goto_control(self):
+        total = len(self.file_pairs)
+        if not hasattr(self, "goto_spin"):
+            return
+
+        max_value = total if total else 1
+        self.goto_spin.config(to=max_value)
+        if total:
+            self.goto_var.set(str(self.current_index + 1))
+            self.goto_spin.config(state="normal")
+            self.btn_goto.config(state="normal")
+        else:
+            self.goto_var.set("")
+            self.goto_spin.config(state="disabled")
+            self.btn_goto.config(state="disabled")
+
+
+    def goto_file(self):
+        """Przejście do obrazu o numerze podanym przez użytkownika."""
+        if self.is_transcribing:
+            return
+
+        if not self.file_pairs:
+            return
+
+        try:
+            target_number = int(self.goto_var.get())
+        except (TypeError, ValueError):
+            messagebox.showerror(
+                self.t["msg_error_title"],
+                self.t["msg_goto_invalid"] + f" 1-{len(self.file_pairs)}.",
+                parent=self.root,
+            )
+            self._update_goto_control()
+            return
+
+        if target_number < 1 or target_number > len(self.file_pairs):
+            messagebox.showerror(
+                self.t["msg_error_title"],
+                self.t["msg_goto_invalid"] + f" 1-{len(self.file_pairs)}.",
+                parent=self.root,
+            )
+            self._update_goto_control()
+            return
+
+        target_index = target_number - 1
+        if target_index == self.current_index:
+            return
+
+        self.save_current_text(silent=True)
+        self.current_index = target_index
+        self.load_pair(self.current_index)
+
+
     def first_file(self):
         """ przejście do pierwszego pliku """
         if self.is_transcribing:
@@ -1866,6 +2079,38 @@ class ManuscriptEditor:
                                 self.t["msg_export_txt_text"] + f":\n{os.path.basename(target_path)}",
                                 parent=self.root)
 
+        except Exception as e:
+            messagebox.showerror(self.t["msg_export_error_title"],
+                                 self.t["msg_export_error_text"] + f":\n{e}", parent=self.root)
+
+
+    def export_merged_html_table(self):
+        """ eksport tabel HTML z wielu transkrypcji do jednej tabeli """
+        self.save_current_text(silent=True)
+
+        if not self.file_pairs:
+            messagebox.showwarning(self.t["msg_export_txt_missing_title"],
+                                   self.t["msg_export_txt_missing_text"], parent=self.root)
+            return
+
+        target_path = filedialog.asksaveasfilename(
+            title=self.t["file_dialog_export_html_table_title"],
+            defaultextension=".html",
+            filetypes=[(self.t["file_type_html"], "*.html")],
+            parent=self.root,
+        )
+
+        if not target_path:
+            return
+
+        try:
+            row_count = export_merged_html_table(self.file_pairs, target_path)
+            messagebox.showinfo(
+                self.t["msg_csv_ok_title"],
+                self.t["msg_export_html_table_text"] + f":\n{os.path.basename(target_path)}\n"
+                + self.t["msg_export_html_table_rows"] + f": {row_count}",
+                parent=self.root,
+            )
         except Exception as e:
             messagebox.showerror(self.t["msg_export_error_title"],
                                  self.t["msg_export_error_text"] + f":\n{e}", parent=self.root)
@@ -1946,17 +2191,61 @@ class ManuscriptEditor:
         self.batch_controller.update_batch_ui(message, progress_value)
 
 
-    def _call_gemini_api(self, image_path):
-        """ wspólna funkcja wołająca API, zwraca tekst transkrypcji """
-        model, response = transcribe_image(
+    def _ai_button_text(self):
+        return "Ollama" if getattr(self, "llm_provider", "gemini") == "ollama" else "Gemini"
+
+
+    def _ollama_timeout_seconds(self):
+        return max(int(getattr(self, "api_timeout_seconds", 300)), 900)
+
+
+    def _transcribe_current_provider(self, image_path):
+        if self.llm_provider == "ollama":
+            return ollama_transcribe_image(
+                self.prompt_text,
+                image_path,
+                model_name=self.ollama_htr_model,
+                base_url=self.ollama_base_url,
+                timeout_seconds=self._ollama_timeout_seconds(),
+                remove_table_headers=self.ollama_remove_table_headers,
+                pretty_html=self.ollama_pretty_html,
+            )
+        return transcribe_image(
             self.api_key,
             self.prompt_text,
             image_path,
             model_name=self.htr_model,
+            timeout_seconds=self.api_timeout_seconds,
         )
 
-        if response.usage_metadata:
-            self._log_api_usage(model, response.usage_metadata)
+
+    def _stream_transcribe_current_provider(self, image_path):
+        if self.llm_provider == "ollama":
+            return ollama_stream_transcribe_image(
+                self.prompt_text,
+                image_path,
+                model_name=self.ollama_htr_model,
+                base_url=self.ollama_base_url,
+                timeout_seconds=self._ollama_timeout_seconds(),
+            )
+        return stream_transcribe_image(
+            self.api_key,
+            self.prompt_text,
+            image_path,
+            model_name=self.htr_model,
+            timeout_seconds=self.api_timeout_seconds,
+        )
+
+
+    def _log_model_usage(self, model, usage_metadata):
+        if usage_metadata:
+            self._log_api_usage(model, usage_metadata)
+
+
+    def _call_gemini_api(self, image_path):
+        """ wspólna funkcja wołająca API, zwraca tekst transkrypcji """
+        model, response = self._transcribe_current_provider(image_path)
+        self._log_model_usage(model, response.usage_metadata)
 
         return response.text
 
@@ -1976,7 +2265,7 @@ class ManuscriptEditor:
                                  parent=self.root)
             return
 
-        if not self.ensure_api_key():
+        if not self.ensure_ai_config():
             return
 
         current_text = self.text_area.get(1.0, tk.END).strip()
@@ -2007,12 +2296,14 @@ class ManuscriptEditor:
     def _single_worker(self, image_path):
         """ wątek dla pojedynczego pliku z obsługą strumieniowania """
         try:
-            model, stream = stream_transcribe_image(
-                self.api_key,
-                self.prompt_text,
-                image_path,
-                model_name=self.htr_model,
-            )
+            if self.llm_provider == "ollama" or not self.stream_transcription:
+                model, response = self._transcribe_current_provider(image_path)
+                if response.usage_metadata:
+                    self.root.after(0, lambda: self._log_model_usage(model, response.usage_metadata))
+                self.root.after(0, self._single_finished, True, response.text or "")
+                return
+
+            model, stream = self._stream_transcribe_current_provider(image_path)
 
             # czyszczenie pola tekstowego przed startem strumienia (w wątku głównym)
             self.root.after(0, self._clear_text_for_transcription)
@@ -2027,7 +2318,7 @@ class ManuscriptEditor:
                         loop_usage_metadata = response.usage_metadata
 
             if loop_usage_metadata:
-                self.root.after(0, lambda: self._log_api_usage(model, loop_usage_metadata))
+                self.root.after(0, lambda: self._log_model_usage(model, loop_usage_metadata))
 
             self.root.after(0, self._single_finished, True, "")
         except Exception as e:
@@ -2054,10 +2345,13 @@ class ManuscriptEditor:
         self.progress_bar.stop()
         self.progress_bar.pack_forget()
         self.is_transcribing = False
-        self.btn_ai.config(state="normal", text="Gemini")
+        self.btn_ai.config(state="normal", text=self._ai_button_text())
         self.text_area.config(state="normal")
 
         if success:
+            if content:
+                self.text_area.delete(1.0, tk.END)
+                self.text_area.insert(tk.END, content)
             # zapisywanie finalnej wersji po zakończeniu strumieniowania
             self.save_current_text(True)
             messagebox.showinfo(self.t["msg_csv_ok_title"],
@@ -2066,7 +2360,8 @@ class ManuscriptEditor:
             self.root.focus_set()
         else:
             messagebox.showerror(self.t["msg_transcription_error_title"],
-                                 f"Info:\n{content}",
+                                 "Nie udało się wykonać transkrypcji.",
+                                 detail=str(content),
                                  parent=self.root)
             self.root.focus_set()
 
@@ -2090,9 +2385,18 @@ class ManuscriptEditor:
         return bool(self.api_key)
 
 
+    def ensure_ai_config(self):
+        """Sprawdza konfigurację dostawcy modelu przed wywołaniem AI."""
+        if getattr(self, "llm_provider", "gemini") == "ollama":
+            return True
+        return self.ensure_api_key()
+
+
     def open_settings_dialog(self):
         """ Otwiera okno ustawień aplikacji """
         open_settings_dialog_window(self)
+        if self.btn_ai:
+            self.btn_ai.config(text=self._ai_button_text())
 
 
 # ----------------------------------- MAIN -------------------------------------
