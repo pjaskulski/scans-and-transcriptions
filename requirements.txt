@@ -3,5 +3,6 @@ Pillow
 python-docx
 python-dotenv
 google-genai
+datalab-python-sdk
 pymupdf
 tk

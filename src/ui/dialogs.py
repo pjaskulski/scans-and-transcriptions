@@ -8,6 +8,7 @@ from ttkbootstrap.widgets.scrolled import ScrolledFrame
 
 from app.models import AppConfig
 from services.config_service import load_app_config, save_app_config
+from services.datalab_service import DEFAULT_DATALAB_MODE, DEFAULT_DATALAB_OUTPUT_FORMAT
 from services.gemini_service import (
     model_code_for_label,
     model_label_for_code,
@@ -203,19 +204,23 @@ def open_settings_dialog(app):
     gemini_tab_frame = ttk.Frame(notebook)
     ollama_tab_frame = ttk.Frame(notebook)
     mistral_tab_frame = ttk.Frame(notebook)
+    datalab_tab_frame = ttk.Frame(notebook)
     notebook.add(general_tab_frame, text=app.t["settings_tab_general"])
     notebook.add(gemini_tab_frame, text=app.t["settings_tab_gemini"])
     notebook.add(ollama_tab_frame, text=app.t["settings_tab_ollama"])
     notebook.add(mistral_tab_frame, text=app.t["settings_tab_mistral"])
+    notebook.add(datalab_tab_frame, text=app.t["settings_tab_datalab"])
 
     general_tab = ScrolledFrame(general_tab_frame, autohide=False)
     gemini_tab = ScrolledFrame(gemini_tab_frame, autohide=False)
     ollama_tab = ScrolledFrame(ollama_tab_frame, autohide=False)
     mistral_tab = ScrolledFrame(mistral_tab_frame, autohide=False)
+    datalab_tab = ScrolledFrame(datalab_tab_frame, autohide=False)
     general_tab.pack(fill=BOTH, expand=True, padx=10, pady=10)
     gemini_tab.pack(fill=BOTH, expand=True, padx=10, pady=10)
     ollama_tab.pack(fill=BOTH, expand=True, padx=10, pady=10)
     mistral_tab.pack(fill=BOTH, expand=True, padx=10, pady=10)
+    datalab_tab.pack(fill=BOTH, expand=True, padx=10, pady=10)
 
     config = load_app_config(app.config_file)
     provider_var = tk.StringVar(value=config.llm_provider)
@@ -234,6 +239,8 @@ def open_settings_dialog(app):
     mistral_ocr_model_var = tk.StringVar(value=config.mistral_ocr_model or DEFAULT_MISTRAL_OCR_MODEL)
     mistral_include_blocks_var = tk.BooleanVar(value=config.mistral_include_blocks)
     mistral_table_format_var = tk.StringVar(value=config.mistral_table_format)
+    datalab_output_format_var = tk.StringVar(value=config.datalab_output_format or DEFAULT_DATALAB_OUTPUT_FORMAT)
+    datalab_mode_var = tk.StringVar(value=config.datalab_mode or DEFAULT_DATALAB_MODE)
     api_timeout_var = tk.IntVar(value=config.api_timeout_seconds)
     stream_transcription_var = tk.BooleanVar(value=config.stream_transcription)
 
@@ -241,7 +248,7 @@ def open_settings_dialog(app):
     provider_combo = ttk.Combobox(
         general_tab,
         state="readonly",
-        values=["gemini", "ollama", "mistral"],
+        values=["gemini", "ollama", "mistral", "datalab"],
         textvariable=provider_var,
         width=16,
     )
@@ -430,6 +437,48 @@ def open_settings_dialog(app):
         justify=LEFT,
     ).pack(anchor="w", pady=(2, 10))
 
+    ttk.Separator(datalab_tab).pack(fill=X, pady=(4, 10))
+
+    ttk.Label(datalab_tab, text=app.t["settings_datalab_label"], font=("Segoe UI", 10, "bold")).pack(anchor="w")
+    ttk.Label(
+        datalab_tab,
+        text=app.t["settings_datalab_help"],
+        bootstyle="secondary",
+        font=("Segoe UI", 8),
+        wraplength=680,
+        justify=LEFT,
+    ).pack(anchor="w", pady=(2, 8))
+
+    ttk.Label(datalab_tab, text=app.t["settings_datalab_key_label"]).pack(anchor="w")
+    ttk.Label(
+        datalab_tab,
+        text=app.t["settings_datalab_key_help"],
+        bootstyle="secondary",
+        font=("Segoe UI", 8),
+        wraplength=680,
+        justify=LEFT,
+    ).pack(anchor="w", pady=(2, 10))
+
+    ttk.Label(datalab_tab, text=app.t["settings_datalab_output_format_label"]).pack(anchor="w")
+    datalab_output_format_combo = ttk.Combobox(
+        datalab_tab,
+        state="readonly",
+        values=["markdown", "html", "json"],
+        textvariable=datalab_output_format_var,
+        width=16,
+    )
+    datalab_output_format_combo.pack(anchor="w", pady=(2, 10))
+
+    ttk.Label(datalab_tab, text=app.t["settings_datalab_mode_label"]).pack(anchor="w")
+    datalab_mode_combo = ttk.Combobox(
+        datalab_tab,
+        state="readonly",
+        values=["fast", "balanced", "accurate"],
+        textvariable=datalab_mode_var,
+        width=16,
+    )
+    datalab_mode_combo.pack(anchor="w", pady=(2, 10))
+
     ttk.Separator(general_tab).pack(fill=X, pady=(4, 10))
 
     ttk.Label(general_tab, text=app.t["settings_timeout_label"]).pack(anchor="w")
@@ -475,6 +524,16 @@ def open_settings_dialog(app):
         app.mistral_ocr_model = mistral_ocr_model_var.get().strip() or DEFAULT_MISTRAL_OCR_MODEL
         app.mistral_include_blocks = bool(mistral_include_blocks_var.get())
         app.mistral_table_format = mistral_table_format_var.get() if mistral_table_format_var.get() in {"markdown", "html"} else "markdown"
+        app.datalab_output_format = (
+            datalab_output_format_var.get()
+            if datalab_output_format_var.get() in {"markdown", "html", "json"}
+            else DEFAULT_DATALAB_OUTPUT_FORMAT
+        )
+        app.datalab_mode = (
+            datalab_mode_var.get()
+            if datalab_mode_var.get() in {"fast", "balanced", "accurate"}
+            else DEFAULT_DATALAB_MODE
+        )
         try:
             app.api_timeout_seconds = max(30, min(int(api_timeout_var.get()), 3600))
         except (tk.TclError, ValueError):
@@ -508,6 +567,8 @@ def open_settings_dialog(app):
                     mistral_ocr_model=app.mistral_ocr_model,
                     mistral_include_blocks=app.mistral_include_blocks,
                     mistral_table_format=app.mistral_table_format,
+                    datalab_output_format=app.datalab_output_format,
+                    datalab_mode=app.datalab_mode,
                     api_timeout_seconds=app.api_timeout_seconds,
                     stream_transcription=app.stream_transcription,
                 ),

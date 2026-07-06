@@ -23,6 +23,8 @@ class AppConfig:
     mistral_ocr_model: str = "mistral-ocr-4-0"
     mistral_include_blocks: bool = False
     mistral_table_format: str = "markdown"
+    datalab_output_format: str = "markdown"
+    datalab_mode: str = "balanced"
     api_timeout_seconds: int = 300
     stream_transcription: bool = True
 

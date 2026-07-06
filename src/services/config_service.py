@@ -4,6 +4,12 @@ from typing import Tuple
 
 from app.models import AppConfig
 from app.paths import config_file, localization_file
+from services.datalab_service import (
+    DEFAULT_DATALAB_MODE,
+    DEFAULT_DATALAB_OUTPUT_FORMAT,
+    normalize_mode as normalize_datalab_mode,
+    normalize_output_format as normalize_datalab_output_format,
+)
 from services.gemini_service import (
     DEFAULT_ANALYSIS_MODEL,
     DEFAULT_API_TIMEOUT_SECONDS,
@@ -17,7 +23,7 @@ from services.ollama_service import DEFAULT_OLLAMA_BASE_URL, DEFAULT_OLLAMA_MODE
 
 
 def _normalize_provider(provider: str | None) -> str:
-    return provider if provider in {"gemini", "ollama", "mistral"} else "gemini"
+    return provider if provider in {"gemini", "ollama", "mistral", "datalab"} else "gemini"
 
 
 def _normalize_mistral_table_format(value: str | None) -> str:
@@ -84,6 +90,10 @@ def load_app_config(filename: str = "config.json") -> AppConfig:
         mistral_ocr_model=data.get("mistral_ocr_model", DEFAULT_MISTRAL_OCR_MODEL) or DEFAULT_MISTRAL_OCR_MODEL,
         mistral_include_blocks=bool(data.get("mistral_include_blocks", False)),
         mistral_table_format=_normalize_mistral_table_format(data.get("mistral_table_format", "markdown")),
+        datalab_output_format=normalize_datalab_output_format(
+            data.get("datalab_output_format", DEFAULT_DATALAB_OUTPUT_FORMAT)
+        ),
+        datalab_mode=normalize_datalab_mode(data.get("datalab_mode", DEFAULT_DATALAB_MODE)),
         api_timeout_seconds=timeout_seconds,
         stream_transcription=bool(data.get("stream_transcription", True)),
     )
@@ -113,6 +123,8 @@ def save_app_config(app_config: AppConfig, filename: str = "config.json") -> Non
     data["mistral_ocr_model"] = app_config.mistral_ocr_model or DEFAULT_MISTRAL_OCR_MODEL
     data["mistral_include_blocks"] = bool(app_config.mistral_include_blocks)
     data["mistral_table_format"] = _normalize_mistral_table_format(app_config.mistral_table_format)
+    data["datalab_output_format"] = normalize_datalab_output_format(app_config.datalab_output_format)
+    data["datalab_mode"] = normalize_datalab_mode(app_config.datalab_mode)
     data["api_timeout_seconds"] = max(30, min(int(app_config.api_timeout_seconds), 3600))
     data["stream_transcription"] = bool(app_config.stream_transcription)
     data.pop("tts_lang", None)

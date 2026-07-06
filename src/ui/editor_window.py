@@ -4,6 +4,7 @@ import re
 import json
 import logging
 import threading
+import time
 import warnings
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -16,6 +17,12 @@ from app.models import AppConfig
 from app.paths import prompt_file, prompts_dir
 from services.cache_service import calculate_checksum, get_ner_json_path, save_cache
 from services.config_service import load_app_config, load_localization, save_app_config
+from services.datalab_service import (
+    DEFAULT_DATALAB_MODE,
+    DEFAULT_DATALAB_OUTPUT_FORMAT,
+    convert_image as datalab_convert_image,
+    get_api_key as get_datalab_api_key,
+)
 from services.export_service import (
     collect_ner_rows,
     export_docx,
@@ -156,6 +163,8 @@ class ManuscriptEditor:
         self.mistral_ocr_model = DEFAULT_MISTRAL_OCR_MODEL
         self.mistral_include_blocks = False
         self.mistral_table_format = "markdown"
+        self.datalab_output_format = DEFAULT_DATALAB_OUTPUT_FORMAT
+        self.datalab_mode = DEFAULT_DATALAB_MODE
         self.api_timeout_seconds = DEFAULT_API_TIMEOUT_SECONDS
         self.stream_transcription = True
         self.prompt_text = ""
@@ -1494,6 +1503,8 @@ class ManuscriptEditor:
             self.mistral_ocr_model = config.mistral_ocr_model
             self.mistral_include_blocks = config.mistral_include_blocks
             self.mistral_table_format = config.mistral_table_format
+            self.datalab_output_format = config.datalab_output_format
+            self.datalab_mode = config.datalab_mode
             self.api_timeout_seconds = config.api_timeout_seconds
             self.stream_transcription = config.stream_transcription
             if not self.api_key:
@@ -1548,6 +1559,12 @@ class ManuscriptEditor:
                         "mistral_table_format",
                         existing_config.mistral_table_format,
                     ),
+                    datalab_output_format=getattr(
+                        self,
+                        "datalab_output_format",
+                        existing_config.datalab_output_format,
+                    ),
+                    datalab_mode=getattr(self, "datalab_mode", existing_config.datalab_mode),
                     api_timeout_seconds=getattr(
                         self,
                         "api_timeout_seconds",
@@ -2219,6 +2236,8 @@ class ManuscriptEditor:
             return "Ollama"
         if provider == "mistral":
             return "Mistral"
+        if provider == "datalab":
+            return "Datalab"
         return "Gemini"
 
 
@@ -2244,6 +2263,13 @@ class ManuscriptEditor:
                 timeout_seconds=self.api_timeout_seconds,
                 include_blocks=self.mistral_include_blocks,
                 table_format=self.mistral_table_format,
+            )
+        if self.llm_provider == "datalab":
+            return datalab_convert_image(
+                image_path,
+                output_format=self.datalab_output_format,
+                mode=self.datalab_mode,
+                timeout_seconds=self.api_timeout_seconds,
             )
         return transcribe_image(
             self.api_key,
@@ -2294,7 +2320,7 @@ class ManuscriptEditor:
         if not self.file_pairs or self.is_transcribing:
             return
 
-        if self.llm_provider != "mistral" and not self.prompt_text:
+        if self.llm_provider not in {"mistral", "datalab"} and not self.prompt_text:
             messagebox.showerror(self.t["prompt_config_error1"],
                                  self.t["prompt_config_error2"],
                                  parent=self.root)
@@ -2330,12 +2356,14 @@ class ManuscriptEditor:
 
     def _single_worker(self, image_path):
         """ wątek dla pojedynczego pliku z obsługą strumieniowania """
+        start_time = time.monotonic()
         try:
-            if self.llm_provider in {"ollama", "mistral"} or not self.stream_transcription:
+            if self.llm_provider in {"ollama", "mistral", "datalab"} or not self.stream_transcription:
                 model, response = self._transcribe_current_provider(image_path)
                 if response.usage_metadata:
                     self.root.after(0, lambda: self._log_model_usage(model, response.usage_metadata))
-                self.root.after(0, self._single_finished, True, response.text or "")
+                elapsed_seconds = time.monotonic() - start_time
+                self.root.after(0, self._single_finished, True, response.text or "", elapsed_seconds)
                 return
 
             model, stream = self._stream_transcribe_current_provider(image_path)
@@ -2355,9 +2383,11 @@ class ManuscriptEditor:
             if loop_usage_metadata:
                 self.root.after(0, lambda: self._log_model_usage(model, loop_usage_metadata))
 
-            self.root.after(0, self._single_finished, True, "")
+            elapsed_seconds = time.monotonic() - start_time
+            self.root.after(0, self._single_finished, True, "", elapsed_seconds)
         except Exception as e:
-            self.root.after(0, self._single_finished, False, str(e))
+            elapsed_seconds = time.monotonic() - start_time
+            self.root.after(0, self._single_finished, False, str(e), elapsed_seconds)
 
 
     def _append_stream_text(self, text):
@@ -2375,7 +2405,7 @@ class ManuscriptEditor:
         self.text_area.config(state="disabled")
 
 
-    def _single_finished(self, success, content):
+    def _single_finished(self, success, content, elapsed_seconds=None):
         """ aktualizacja GUI po zakończeniu pracy wątku """
         self.progress_bar.stop()
         self.progress_bar.pack_forget()
@@ -2389,8 +2419,11 @@ class ManuscriptEditor:
                 self.text_area.insert(tk.END, content)
             # zapisywanie finalnej wersji po zakończeniu strumieniowania
             self.save_current_text(True)
+            message = self.t["msg_transcription_ok"]
+            if elapsed_seconds is not None:
+                message += f"\n{self.t['msg_transcription_elapsed']}: {elapsed_seconds:.1f} s"
             messagebox.showinfo(self.t["msg_csv_ok_title"],
-                                self.t["msg_transcription_ok"],
+                                message,
                                 parent=self.root)
             self.root.focus_set()
         else:
@@ -2436,15 +2469,26 @@ class ManuscriptEditor:
             )
             self.open_settings_dialog()
             return bool(get_mistral_api_key())
+        if provider == "datalab":
+            if get_datalab_api_key():
+                return True
+            messagebox.showinfo(
+                self.t["apikey_config_error1"],
+                self.t["datalab_apikey_config_error"],
+                detail=self.t["datalab_apikey_config_detail"],
+                parent=self.root,
+            )
+            self.open_settings_dialog()
+            return bool(get_datalab_api_key())
         return self.ensure_api_key()
 
 
     def ensure_non_ocr_ai_config(self):
         """Sprawdza konfigurację funkcji wymagających modelu promptowanego."""
-        if getattr(self, "llm_provider", "gemini") == "mistral":
+        if getattr(self, "llm_provider", "gemini") in {"mistral", "datalab"}:
             messagebox.showinfo(
                 self.t["msg_warning"],
-                self.t["mistral_ocr_only_info"],
+                self.t["ocr_provider_only_info"],
                 parent=self.root,
             )
             return False
