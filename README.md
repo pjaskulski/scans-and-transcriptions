@@ -20,11 +20,11 @@ Gemini and Ollama providers use prompts and can be used for transcription, FIX, 
 ## Application features:
 
   - **Browsing scans and transcriptions**. The application assumes that the specified directory contains scan files and transcript files with identical names but with the *.txt extension. If a text file is missing, the application will automatically create an empty one.
-  - If the folder does not yet contain scan images, you can **import pages from a PDF file**. The application can extract pages from PDF files and save them in the working folder as `img-01.png`, `img-02.png`, etc. This is useful for digitised documents distributed as PDFs, with or without a text layer.
+  - If the folder does not yet contain scan images, you can **import pages from a PDF file**. The application can extract pages from PDF files and save them in the working folder as `img-001.png`, `img-002.png`, etc. The number width is chosen automatically from the total number of imported pages, so files sort correctly even for large PDFs. This is useful for digitised documents distributed as PDFs, with or without a text layer.
   - **Creating transcripts using the selected provider** for the current scan or scan series. For scan series, the application displays all scans in the selected directory and selects those that do not yet have a text transcript file or those with an empty transcript file. This selection can, of course, be changed.
   - Gemini and Ollama transcriptions use one of the **predefined prompts** (prompts for Polish documents are currently available), or a custom prompt prepared by the user. Mistral OCR and Datalab do not use these prompts.
   - Transcription files are automatically saved when you move to the next/previous file. You can also force a save by pressing the SAVE button.
-  - Transcriptions can be saved as a **bulk text file** or in a **docx file**. For docx files, the application also concatenates broken words and lines into paragraphs. Transcriptions can also be saved in **TEI-XML** format. HTML table transcriptions can be merged into a single HTML table.
+  - Transcriptions can be saved as a **bulk text file** or in a **docx file**. For docx files, the application also concatenates broken words and lines into paragraphs. Transcriptions can also be saved in **TEI-XML** format. HTML table transcriptions can be merged into a single HTML table, exported as separate HTML files next to the source TXT files, e.g. `img-001-1.html`, `img-001-2.html`, or saved to an XLSX workbook with one worksheet per table. XLSX export also tries to include the numbered caption immediately preceding each table, placing it below the table.
   - To facilitate verification of transcription accuracy, the application allows you to pan the scan using the left mouse button, **zoom in/out** using the mouse scroll wheel, and display a **magnifying glass** window at a selected location using the right mouse button. 
   - Simple **filters** can be applied to scans, such as contrast enhancement and image inversion.
   - You can adjust the font size in the transcription field.
@@ -50,7 +50,7 @@ In the right panel of the application, above the text field, there is a bar disp
 
 ![Screen](/doc/images_folder.png)
 
-If the working folder is empty or if your source material is stored in a PDF file, you can also use the **PDF import** button. The application will extract the pages of the PDF as image files and save them in the current working folder, using names such as `img-01.png`, `img-02.png`, and so on. During import, a progress window is displayed, which is especially useful for large PDFs containing many hundreds of pages.
+If the working folder is empty or if your source material is stored in a PDF file, you can also use the **PDF import** button. The application will extract the pages of the PDF as image files and save them in the current working folder, using names such as `img-001.png`, `img-002.png`, and so on. During import, a progress window is displayed, which is especially useful for large PDFs containing many hundreds of pages.
 
 ![PDF import](/doc/import_pdf.png)
 
@@ -63,7 +63,7 @@ List of buttons:
   - Save changes to the current file
   - Read a scan with the selected provider
   - Read a series of scans with the selected provider
-  - Open the export menu: merged TXT, merged DOCX, merged HTML table or TEI-XML
+  - Open the export menu: merged TXT, merged DOCX, merged HTML table, separate HTML table files, HTML tables to XLSX or TEI-XML
   - Go to the next file
   - Go to the last file
 

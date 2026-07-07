@@ -3,6 +3,7 @@ import json
 import logging
 import mimetypes
 import os
+import re
 import socket
 import urllib.error
 import urllib.request
@@ -75,13 +76,78 @@ def _usage_from_response(data: dict, doc_size_bytes: int) -> MistralUsageMetadat
     )
 
 
+def _decode_base64_text(value: str) -> str:
+    try:
+        return base64.b64decode(value).decode("utf-8").strip()
+    except Exception:
+        return ""
+
+
+def _artifact_id(item: dict) -> str:
+    return (
+        item.get("id")
+        or item.get("name")
+        or item.get("filename")
+        or item.get("file_name")
+        or ""
+    )
+
+
+def _artifact_text(item: dict) -> str:
+    for key in ["html", "markdown", "text", "content"]:
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False, indent=2)
+
+    value = item.get("image_base64") or item.get("base64")
+    if isinstance(value, str) and value.strip():
+        return _decode_base64_text(value)
+
+    return ""
+
+
+def _page_artifacts(page: dict) -> dict[str, str]:
+    artifacts = {}
+    for key in ["tables", "images", "artifacts"]:
+        for index, item in enumerate(page.get(key) or []):
+            if not isinstance(item, dict):
+                continue
+            item_id = _artifact_id(item)
+            item_text = _artifact_text(item)
+            if key == "tables" and not item_id:
+                item_id = f"tbl-{index}.html"
+            if item_id and item_text:
+                artifacts[item_id] = item_text
+                if key == "tables":
+                    artifacts.setdefault(f"tbl-{index}.html", item_text)
+                    artifacts.setdefault(f"tbl-{index}.md", item_text)
+    return artifacts
+
+
+def _inline_linked_artifacts(markdown: str, artifacts: dict[str, str]) -> str:
+    if not artifacts:
+        return markdown
+
+    def replace_link(match):
+        label = match.group(1)
+        target = match.group(2)
+        artifact = artifacts.get(target) or artifacts.get(label)
+        if not artifact:
+            return match.group(0)
+        return artifact
+
+    return re.sub(r"!?\[([^\]]+)\]\(([^)]+)\)", replace_link, markdown)
+
+
 def _extract_markdown(data: dict) -> str:
     pages = data.get("pages") or []
     texts = []
     for page in pages:
         markdown = (page.get("markdown") or "").strip()
         if markdown:
-            texts.append(markdown)
+            texts.append(_inline_linked_artifacts(markdown, _page_artifacts(page)))
     return "\n\n".join(texts).strip()
 
 
@@ -105,7 +171,7 @@ def ocr_image(
             "type": "image_url",
             "image_url": image_url,
         },
-        "include_image_base64": False,
+        "include_image_base64": table_format == "html",
         "include_blocks": bool(include_blocks),
         "table_format": table_format,
     }

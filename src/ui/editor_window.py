@@ -26,6 +26,8 @@ from services.datalab_service import (
 from services.export_service import (
     collect_ner_rows,
     export_docx,
+    export_html_tables_as_files,
+    export_html_tables_xlsx,
     export_merged_html_table,
     export_tei,
     export_txt,
@@ -625,6 +627,8 @@ class ManuscriptEditor:
         self.export_menu.add_command(label=self.t["export_menu_txt"], command=self.export_all_data)
         self.export_menu.add_command(label=self.t["export_menu_docx"], command=self.export_all_data_docx)
         self.export_menu.add_command(label=self.t["export_menu_html_table"], command=self.export_merged_html_table)
+        self.export_menu.add_command(label=self.t["export_menu_html_tables_files"], command=self.export_html_tables_as_files)
+        self.export_menu.add_command(label=self.t["export_menu_html_tables_xlsx"], command=self.export_html_tables_xlsx)
         self.export_menu.add_command(label=self.t["export_menu_tei"], command=self.export_to_tei_xml)
         self.btn_export.configure(menu=self.export_menu)
 
@@ -2148,6 +2152,59 @@ class ManuscriptEditor:
                 self.t["msg_csv_ok_title"],
                 self.t["msg_export_html_table_text"] + f":\n{os.path.basename(target_path)}\n"
                 + self.t["msg_export_html_table_rows"] + f": {row_count}",
+                parent=self.root,
+            )
+        except Exception as e:
+            messagebox.showerror(self.t["msg_export_error_title"],
+                                 self.t["msg_export_error_text"] + f":\n{e}", parent=self.root)
+
+
+    def export_html_tables_as_files(self):
+        """ zapisuje tabele HTML z transkrypcji jako osobne pliki obok plików txt """
+        self.save_current_text(silent=True)
+
+        if not self.file_pairs:
+            messagebox.showwarning(self.t["msg_export_txt_missing_title"],
+                                   self.t["msg_export_txt_missing_text"], parent=self.root)
+            return
+
+        try:
+            table_count = export_html_tables_as_files(self.file_pairs)
+            messagebox.showinfo(
+                self.t["msg_csv_ok_title"],
+                self.t["msg_export_html_tables_files_text"] + f": {table_count}",
+                parent=self.root,
+            )
+        except Exception as e:
+            messagebox.showerror(self.t["msg_export_error_title"],
+                                 self.t["msg_export_error_text"] + f":\n{e}", parent=self.root)
+
+
+    def export_html_tables_xlsx(self):
+        """ eksportuje tabele HTML z transkrypcji do skoroszytu XLSX """
+        self.save_current_text(silent=True)
+
+        if not self.file_pairs:
+            messagebox.showwarning(self.t["msg_export_txt_missing_title"],
+                                   self.t["msg_export_txt_missing_text"], parent=self.root)
+            return
+
+        target_path = filedialog.asksaveasfilename(
+            title=self.t["file_dialog_export_html_tables_xlsx_title"],
+            defaultextension=".xlsx",
+            filetypes=[(self.t["file_type_xlsx"], "*.xlsx")],
+            parent=self.root,
+        )
+
+        if not target_path:
+            return
+
+        try:
+            table_count = export_html_tables_xlsx(self.file_pairs, target_path)
+            messagebox.showinfo(
+                self.t["msg_csv_ok_title"],
+                self.t["msg_export_html_tables_xlsx_text"] + f":\n{os.path.basename(target_path)}\n"
+                + self.t["msg_export_html_tables_xlsx_tables"] + f": {table_count}",
                 parent=self.root,
             )
         except Exception as e:

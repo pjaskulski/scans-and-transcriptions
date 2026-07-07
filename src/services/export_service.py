@@ -2,6 +2,7 @@ import csv
 import json
 import os
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 
 from docx import Document
@@ -27,6 +28,239 @@ def export_txt(scan_files: list[dict], target_path: str) -> None:
 
 def _find_html_tables(text: str) -> list[tuple[str, str]]:
     return re.findall(r"<table\b([^>]*)>(.*?)</table>", text, flags=re.IGNORECASE | re.DOTALL)
+
+
+def _find_html_table_elements(text: str) -> list[str]:
+    return [
+        match.group(0).strip()
+        for match in re.finditer(r"<table\b[^>]*>.*?</table>", text, flags=re.IGNORECASE | re.DOTALL)
+        if match.group(0).strip()
+    ]
+
+
+def _iter_html_table_matches(text: str):
+    return re.finditer(r"<table\b[^>]*>.*?</table>", text, flags=re.IGNORECASE | re.DOTALL)
+
+
+def _text_without_html(value: str) -> str:
+    value = re.sub(r"<\s*br\s*/?\s*>", "\n", value, flags=re.IGNORECASE)
+    value = re.sub(r"</\s*p\s*>", "\n\n", value, flags=re.IGNORECASE)
+    value = re.sub(r"<[^>]+>", " ", value)
+    return "\n".join(" ".join(line.split()) for line in value.splitlines()).strip()
+
+
+def _caption_before_table(text: str, table_start: int) -> str:
+    prefix = text[:table_start]
+    previous_table_end = prefix.lower().rfind("</table>")
+    if previous_table_end >= 0:
+        prefix = prefix[previous_table_end + len("</table>"):]
+
+    prefix = _text_without_html(prefix).strip()
+    if not prefix:
+        return ""
+
+    matches = list(re.finditer(r"(?:^|\n)\s*\d+[A-Za-z]?\.\s+\S", prefix))
+    if not matches:
+        return ""
+
+    caption = prefix[matches[-1].start():].strip()
+    caption = re.sub(r"\s+", " ", caption).strip()
+    if len(caption) < 4:
+        return ""
+    return caption
+
+
+def _positive_int(value: str | None, default: int = 1) -> int:
+    try:
+        parsed = int(value or default)
+    except (TypeError, ValueError):
+        return default
+    return max(parsed, 1)
+
+
+class _HtmlTableParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.rows: list[list[str]] = []
+        self.merges: list[tuple[int, int, int, int]] = []
+        self._row_index = -1
+        self._col_index = 0
+        self._occupied: set[tuple[int, int]] = set()
+        self._cell_parts: list[str] | None = None
+        self._cell_start: tuple[int, int, int, int] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        if tag == "tr":
+            self._row_index += 1
+            self._col_index = 0
+            self._ensure_cell(self._row_index, 0)
+            return
+
+        if tag not in {"td", "th"} or self._row_index < 0:
+            return
+
+        attrs_dict = dict(attrs)
+        while (self._row_index, self._col_index) in self._occupied:
+            self._col_index += 1
+
+        rowspan = _positive_int(attrs_dict.get("rowspan"))
+        colspan = _positive_int(attrs_dict.get("colspan"))
+        self._cell_start = (self._row_index, self._col_index, rowspan, colspan)
+        self._cell_parts = []
+
+    def handle_data(self, data: str) -> None:
+        if self._cell_parts is not None:
+            self._cell_parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag not in {"td", "th"} or self._cell_parts is None or self._cell_start is None:
+            return
+
+        row, col, rowspan, colspan = self._cell_start
+        value = " ".join("".join(self._cell_parts).split())
+        self._ensure_cell(row + rowspan - 1, col + colspan - 1)
+        self.rows[row][col] = value
+
+        for row_offset in range(rowspan):
+            for col_offset in range(colspan):
+                target = (row + row_offset, col + col_offset)
+                if target != (row, col):
+                    self._occupied.add(target)
+
+        if rowspan > 1 or colspan > 1:
+            self.merges.append((row + 1, col + 1, row + rowspan, col + colspan))
+
+        self._col_index = col + colspan
+        self._cell_parts = None
+        self._cell_start = None
+
+    def _ensure_cell(self, row: int, col: int) -> None:
+        while len(self.rows) <= row:
+            self.rows.append([])
+        for row_values in self.rows:
+            while len(row_values) <= col:
+                row_values.append("")
+
+
+def _parse_html_table(table_html: str) -> tuple[list[list[str]], list[tuple[int, int, int, int]]]:
+    parser = _HtmlTableParser()
+    parser.feed(table_html)
+    parser.close()
+    rows = [row for row in parser.rows if any(cell.strip() for cell in row)]
+    return rows, parser.merges
+
+
+def _xlsx_sheet_title(base_title: str, used_titles: set[str]) -> str:
+    title = re.sub(r"[:\\/?*\[\]]", "_", base_title).strip() or "table"
+    title = title[:31]
+    candidate = title
+    suffix = 1
+    while candidate in used_titles:
+        suffix_text = f"_{suffix}"
+        candidate = f"{title[:31 - len(suffix_text)]}{suffix_text}"
+        suffix += 1
+    used_titles.add(candidate)
+    return candidate
+
+
+def _html_document_for_table(table_html: str, title: str) -> str:
+    return "\n".join(
+        [
+            "<!doctype html>",
+            '<html lang="pl">',
+            "<head>",
+            '  <meta charset="utf-8">',
+            f"  <title>{title}</title>",
+            "</head>",
+            "<body>",
+            table_html,
+            "</body>",
+            "</html>",
+            "",
+        ]
+    )
+
+
+def export_html_tables_as_files(scan_files: list[dict]) -> int:
+    written_count = 0
+
+    for pair in scan_files:
+        txt_path = Path(pair["txt"])
+        if not txt_path.exists():
+            continue
+
+        text = txt_path.read_text(encoding="utf-8")
+        tables = _find_html_table_elements(text)
+        for index, table_html in enumerate(tables, start=1):
+            target_path = txt_path.with_name(f"{txt_path.stem}-{index}.html")
+            target_path.write_text(
+                _html_document_for_table(table_html, target_path.stem),
+                encoding="utf-8",
+            )
+            written_count += 1
+
+    if not written_count:
+        raise ValueError("Nie znaleziono tabel HTML w transkrypcjach.")
+
+    return written_count
+
+
+def export_html_tables_xlsx(scan_files: list[dict], target_path: str) -> int:
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font
+
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+    used_titles = set()
+    table_count = 0
+
+    for pair in scan_files:
+        txt_path = Path(pair["txt"])
+        if not txt_path.exists():
+            continue
+
+        text = txt_path.read_text(encoding="utf-8")
+        for index, match in enumerate(_iter_html_table_matches(text), start=1):
+            table_html = match.group(0).strip()
+            rows, merges = _parse_html_table(table_html)
+            if not rows:
+                continue
+
+            sheet_title = _xlsx_sheet_title(f"{txt_path.stem}-{index}", used_titles)
+            worksheet = workbook.create_sheet(sheet_title)
+            for row_index, row in enumerate(rows, start=1):
+                for col_index, value in enumerate(row, start=1):
+                    worksheet.cell(row=row_index, column=col_index, value=value)
+            for start_row, start_col, end_row, end_col in merges:
+                worksheet.merge_cells(
+                    start_row=start_row,
+                    start_column=start_col,
+                    end_row=end_row,
+                    end_column=end_col,
+                )
+            caption = _caption_before_table(text, match.start())
+            if caption:
+                caption_row = len(rows) + 2
+                caption_cell = worksheet.cell(row=caption_row, column=1, value=caption)
+                caption_cell.font = Font(italic=True)
+                caption_cell.alignment = Alignment(wrap_text=True, vertical="top")
+                max_columns = max(len(row) for row in rows)
+                if max_columns > 1:
+                    worksheet.merge_cells(
+                        start_row=caption_row,
+                        start_column=1,
+                        end_row=caption_row,
+                        end_column=max_columns,
+                    )
+            table_count += 1
+
+    if not table_count:
+        raise ValueError("Nie znaleziono tabel HTML w transkrypcjach.")
+
+    workbook.save(target_path)
+    return table_count
 
 
 def _find_table_header(table_body: str) -> str:
