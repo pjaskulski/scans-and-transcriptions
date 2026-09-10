@@ -41,6 +41,14 @@ def _load_json_file(path):
         return {}
 
 
+def _normalize_batch_parallel_workers(value) -> int:
+    try:
+        workers = int(value)
+    except (TypeError, ValueError):
+        return 1
+    return max(1, min(workers, 8))
+
+
 def load_localization(filename: str = "localization.json") -> Tuple[dict, list[str]]:
     path = localization_file(filename)
     if not path.exists():
@@ -96,6 +104,7 @@ def load_app_config(filename: str = "config.json") -> AppConfig:
         datalab_mode=normalize_datalab_mode(data.get("datalab_mode", DEFAULT_DATALAB_MODE)),
         api_timeout_seconds=timeout_seconds,
         stream_transcription=bool(data.get("stream_transcription", True)),
+        batch_parallel_workers=_normalize_batch_parallel_workers(data.get("batch_parallel_workers", 1)),
     )
 
 
@@ -127,6 +136,7 @@ def save_app_config(app_config: AppConfig, filename: str = "config.json") -> Non
     data["datalab_mode"] = normalize_datalab_mode(app_config.datalab_mode)
     data["api_timeout_seconds"] = max(30, min(int(app_config.api_timeout_seconds), 3600))
     data["stream_transcription"] = bool(app_config.stream_transcription)
+    data["batch_parallel_workers"] = _normalize_batch_parallel_workers(app_config.batch_parallel_workers)
     data.pop("tts_lang", None)
     data.pop("tts_model", None)
 

@@ -10,12 +10,14 @@ from google.genai import types
 HTR_MODEL_OPTIONS = [
     ("Gemini 3.1 Pro Preview", "gemini-3.1-pro-preview"),
     ("Gemini 3.5 Flash", "gemini-3.5-flash"),
-    ("Gemini 3.1 Flash Lite", "gemini-3.1-flash-lite"),
+    ("Gemini 3.6 Flash", "gemini-3.6-flash"),
+    ("Gemini 3.5 Flash Lite", "gemini-3.5-flash-lite"),
+    ("Gemini 3.8 Flash","gemini-3.8-flash")
 ]
 
 ANALYSIS_MODEL_OPTIONS = [
     ("Gemini 3.5 Flash", "gemini-3.5-flash"),
-    ("Gemini 3.1 Flash Lite", "gemini-3.1-flash-lite"),
+    ("Gemini 3.5 Flash Lite", "gemini-3.5-flash-lite"),
 ]
 
 BOX_MODEL_OPTIONS = [
@@ -224,6 +226,51 @@ Pamiętaj o zasadach oznaczania niepewności:
         logger.exception("Gemini request failed: task=fix model=%s image=%s", model_name, image_path)
         raise
     logger.info("Gemini request finished: task=fix model=%s image=%s", model_name, image_path)
+    return model_name, response
+
+
+def correct_transcription(
+    api_key: str,
+    image_path: str,
+    original_text: str,
+    model_name: str = DEFAULT_HTR_MODEL,
+    timeout_seconds: int = DEFAULT_API_TIMEOUT_SECONDS,
+):
+    client = _client(api_key, timeout_seconds)
+
+    image_part = _read_image_part(image_path)
+
+    prompt = """
+Otrzymasz skan dokumentu oraz aktualny odczyt OCR/HTR.
+
+Twoim zadaniem jest przygotować poprawioną wersję odczytu na podstawie porównania tekstu ze skanem.
+
+Zasady:
+1. Popraw błędnie odczytane znaki, słowa, interpunkcję i oczywiste pominięcia.
+2. Zachowaj układ tekstu, podział na akapity, tabele oraz istniejący format Markdown albo HTML.
+3. Jeżeli tekst zawiera znaczniki stylu, popraw również błędnie rozpoznane pogrubienia i kursywę.
+4. Dodawaj albo usuwaj znaczniki pogrubienia/kursywy tylko wtedy, gdy wynika to ze skanu.
+5. Nie modernizuj pisowni i nie parafrazuj tekstu.
+6. Nie dodawaj komentarzy, objaśnień ani opisu zmian.
+7. Zwróć WYŁĄCZNIE pełny poprawiony tekst.
+
+Jeśli fragment jest nieczytelny, użyj oznaczenia [nieczytelne]. Jeśli odczyt jest niepewny, oznacz go znakiem zapytania w nawiasie, np. [słowo?].
+"""
+
+    logger.info("Gemini request started: task=fix_replace model=%s image=%s timeout=%ss", model_name, image_path, timeout_seconds)
+    try:
+        response = client.models.generate_content(
+            model=model_name,
+            contents=[
+                types.Part.from_text(text=prompt + "\nAktualny odczyt:\n" + original_text),
+                image_part,
+            ],
+            config=_default_image_config(),
+        )
+    except Exception:
+        logger.exception("Gemini request failed: task=fix_replace model=%s image=%s", model_name, image_path)
+        raise
+    logger.info("Gemini request finished: task=fix_replace model=%s image=%s", model_name, image_path)
     return model_name, response
 
 

@@ -26,6 +26,33 @@ def export_txt(scan_files: list[dict], target_path: str) -> None:
         handle.write("\n\n".join(merged_content))
 
 
+def _page_number_from_pair(pair: dict) -> str:
+    source_name = Path(pair.get("txt") or pair.get("img") or pair.get("name") or "").stem
+    matches = re.findall(r"\d+", source_name)
+    if not matches:
+        return pair.get("name") or source_name
+
+    page_number = matches[-1]
+    normalized = page_number.lstrip("0")
+    return normalized or "0"
+
+
+def export_markdown(scan_files: list[dict], target_path: str) -> None:
+    pages = []
+
+    for pair in scan_files:
+        txt_path = pair["txt"]
+        if os.path.exists(txt_path):
+            with open(txt_path, "r", encoding="utf-8") as handle:
+                text_content = handle.read().strip()
+                if text_content:
+                    page_number = _page_number_from_pair(pair)
+                    pages.append(f"{{{page_number}}}------------------------------------------------\n\n{text_content}")
+
+    with open(target_path, "w", encoding="utf-8") as handle:
+        handle.write("\n\n".join(pages))
+
+
 def _find_html_tables(text: str) -> list[tuple[str, str]]:
     return re.findall(r"<table\b([^>]*)>(.*?)</table>", text, flags=re.IGNORECASE | re.DOTALL)
 

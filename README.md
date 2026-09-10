@@ -22,9 +22,10 @@ Gemini and Ollama providers use prompts and can be used for transcription, FIX, 
   - **Browsing scans and transcriptions**. The application assumes that the specified directory contains scan files and transcript files with identical names but with the *.txt extension. If a text file is missing, the application will automatically create an empty one.
   - If the folder does not yet contain scan images, you can **import pages from a PDF file**. The application can extract pages from PDF files and save them in the working folder as `img-001.png`, `img-002.png`, etc. The number width is chosen automatically from the total number of imported pages, so files sort correctly even for large PDFs. This is useful for digitised documents distributed as PDFs, with or without a text layer.
   - **Creating transcripts using the selected provider** for the current scan or scan series. For scan series, the application displays all scans in the selected directory and selects those that do not yet have a text transcript file or those with an empty transcript file. This selection can, of course, be changed.
+  - Gemini batch transcription can run several API calls in parallel. The number of concurrent Gemini jobs is configurable in settings; low values are recommended when API rate limits are restrictive.
   - Gemini and Ollama transcriptions use one of the **predefined prompts** (prompts for Polish documents are currently available), or a custom prompt prepared by the user. Mistral OCR and Datalab do not use these prompts.
   - Transcription files are automatically saved when you move to the next/previous file. You can also force a save by pressing the SAVE button.
-  - Transcriptions can be saved as a **bulk text file** or in a **docx file**. For docx files, the application also concatenates broken words and lines into paragraphs. Transcriptions can also be saved in **TEI-XML** format. HTML table transcriptions can be merged into a single HTML table, exported as separate HTML files next to the source TXT files, e.g. `img-001-1.html`, `img-001-2.html`, or saved to an XLSX workbook with one worksheet per table. XLSX export also tries to include the numbered caption immediately preceding each table, placing it below the table.
+  - Transcriptions can be saved as a **bulk text file**, a **Markdown file** with page separators such as `{959}------------------------------------------------`, or in a **docx file**. For docx files, the application also concatenates broken words and lines into paragraphs. Transcriptions can also be saved in **TEI-XML** format. HTML table transcriptions can be merged into a single HTML table, exported as separate HTML files next to the source TXT files, e.g. `img-001-1.html`, `img-001-2.html`, or saved to an XLSX workbook with one worksheet per table. XLSX export also tries to include the numbered caption immediately preceding each table, placing it below the table.
   - To facilitate verification of transcription accuracy, the application allows you to pan the scan using the left mouse button, **zoom in/out** using the mouse scroll wheel, and display a **magnifying glass** window at a selected location using the right mouse button. 
   - Simple **filters** can be applied to scans, such as contrast enhancement and image inversion.
   - You can adjust the font size in the transcription field.
@@ -63,7 +64,7 @@ List of buttons:
   - Save changes to the current file
   - Read a scan with the selected provider
   - Read a series of scans with the selected provider
-  - Open the export menu: merged TXT, merged DOCX, merged HTML table, separate HTML table files, HTML tables to XLSX or TEI-XML
+  - Open the export menu: merged TXT, merged Markdown, merged DOCX, merged HTML table, separate HTML table files, HTML tables to XLSX or TEI-XML
   - Go to the next file
   - Go to the last file
 
@@ -84,7 +85,7 @@ Below is a bar displaying information about the current scan file, including its
 The 'NER', 'BOX' and 'CLS' buttons help to verify the transcription. Due to the high frequency of errors in proper names, these can be marked in the transcription text ('NER') and, for comparison, on the scan ('BOX'). The 'CLS' button clears the markings. The 'LEG' button displays a legend with descriptions of the colours used to mark different categories of proper names (people, places and organisations). NER, BOX, FIX and nominative CSV export require a prompt-capable provider: Gemini or Ollama.
 The 'CSV' button allows you to export all the proper names found in the current catalogue to a CSV file.
 The 'LOG' button displays a list of logged API/model calls. Cost and token counts are shown when the provider returns compatible usage metadata.
-The 'FIX' button activates an experimental feature that verifies the existing transcription and highlights sections that may contain errors. This verification process uses the selected Gemini/Ollama correction model.
+The 'FIX' button activates an experimental feature that verifies the existing transcription and highlights sections that may contain errors. This verification process uses the selected Gemini/Ollama correction model. The 'FIX2' button asks the correction model to compare the current transcription with the scan and replace the editor text with a corrected version, preserving Markdown/HTML structure where possible, including bold and italic markers.
   
 **Reading a series of scans** by the selected provider:
 

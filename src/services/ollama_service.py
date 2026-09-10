@@ -621,6 +621,40 @@ Transkrypcja:
     )
 
 
+def correct_transcription(
+    image_path: str,
+    original_text: str,
+    model_name: str = DEFAULT_OLLAMA_MODEL,
+    base_url: str = DEFAULT_OLLAMA_BASE_URL,
+    timeout_seconds: int = 300,
+):
+    prompt = """
+Otrzymasz skan dokumentu oraz aktualny odczyt OCR/HTR.
+
+Twoim zadaniem jest przygotować poprawioną wersję odczytu na podstawie porównania tekstu ze skanem.
+
+Zasady:
+1. Popraw błędnie odczytane znaki, słowa, interpunkcję i oczywiste pominięcia.
+2. Zachowaj układ tekstu, podział na akapity, tabele oraz istniejący format Markdown albo HTML.
+3. Jeżeli tekst zawiera znaczniki stylu, popraw również błędnie rozpoznane pogrubienia i kursywę.
+4. Dodawaj albo usuwaj znaczniki pogrubienia/kursywy tylko wtedy, gdy wynika to ze skanu.
+5. Nie modernizuj pisowni i nie parafrazuj tekstu.
+6. Nie dodawaj komentarzy, objaśnień ani opisu zmian.
+7. Zwróć WYŁĄCZNIE pełny poprawiony tekst.
+
+Jeśli fragment jest nieczytelny, użyj oznaczenia [nieczytelne]. Jeśli odczyt jest niepewny, oznacz go znakiem zapytania w nawiasie, np. [słowo?].
+
+Aktualny odczyt:
+"""
+    return generate(
+        prompt + original_text,
+        model_name=model_name,
+        base_url=base_url,
+        image_path=image_path,
+        timeout_seconds=timeout_seconds,
+    )
+
+
 def extract_entities(
     text: str,
     model_name: str = DEFAULT_OLLAMA_MODEL,

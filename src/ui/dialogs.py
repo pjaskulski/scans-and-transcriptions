@@ -39,11 +39,27 @@ def open_batch_dialog(app):
         pady=(0, 10)
     )
 
-    list_frame = ScrolledFrame(batch_win, autohide=False)
+    list_frame = ttk.Frame(batch_win)
     list_frame.pack(fill=BOTH, expand=True, padx=10, pady=5)
 
-    app.batch_vars = []
-    app.batch_checkbox_widgets = []
+    app.batch_vars = {}
+    app.batch_tree = ttk.Treeview(
+        list_frame,
+        columns=("selected", "name", "status"),
+        show="headings",
+        selectmode="browse",
+    )
+    app.batch_tree.heading("selected", text="")
+    app.batch_tree.heading("name", text=app.t["batch_column_file"])
+    app.batch_tree.heading("status", text=app.t["batch_column_status"])
+    app.batch_tree.column("selected", width=40, minwidth=40, stretch=False, anchor="center")
+    app.batch_tree.column("name", width=520, minwidth=180, stretch=True)
+    app.batch_tree.column("status", width=160, minwidth=120, stretch=False)
+
+    scrollbar = ttk.Scrollbar(list_frame, orient=VERTICAL, command=app.batch_tree.yview)
+    app.batch_tree.configure(yscrollcommand=scrollbar.set)
+    app.batch_tree.pack(side=LEFT, fill=BOTH, expand=True)
+    scrollbar.pack(side=RIGHT, fill=Y)
 
     for idx, pair in enumerate(app.file_pairs):
         txt_path = pair["txt"]
@@ -59,15 +75,34 @@ def open_batch_dialog(app):
         else:
             status_text = app.t["batch_status_text3"]
 
-        var = tk.BooleanVar(value=should_select)
-        app.batch_vars.append((idx, var))
+        item_id = str(idx)
+        app.batch_vars[idx] = should_select
+        app.batch_tree.insert("", "end", iid=item_id, values=("☑" if should_select else "☐", pair["name"], status_text))
 
-        row = ttk.Frame(list_frame)
-        row.pack(fill=X, pady=2)
+    def toggle_item(item_id):
+        if not item_id:
+            return
+        idx = int(item_id)
+        app.batch_vars[idx] = not app.batch_vars.get(idx, False)
+        selected_mark = "☑" if app.batch_vars[idx] else "☐"
+        values = list(app.batch_tree.item(item_id, "values"))
+        if values:
+            values[0] = selected_mark
+            app.batch_tree.item(item_id, values=values)
 
-        cb = ttk.Checkbutton(row, text=f"{pair['name']} {status_text}", variable=var, bootstyle="round-toggle")
-        cb.pack(side=LEFT)
-        app.batch_checkbox_widgets.append(cb)
+    def on_tree_click(event):
+        item_id = app.batch_tree.identify_row(event.y)
+        if item_id:
+            toggle_item(item_id)
+
+    def on_tree_space(_event):
+        selection = app.batch_tree.selection()
+        if selection:
+            toggle_item(selection[0])
+        return "break"
+
+    app.batch_tree.bind("<ButtonRelease-1>", on_tree_click)
+    app.batch_tree.bind("<space>", on_tree_space)
 
     btn_panel = ttk.Frame(batch_win, padding=10)
     btn_panel.pack(fill=X, side=BOTTOM)
@@ -79,15 +114,23 @@ def open_batch_dialog(app):
     app.batch_progress.pack(fill=X, side=BOTTOM, padx=10, pady=5)
 
     def select_all():
-        for _, v in app.batch_vars:
-            v.set(True)
+        for idx in app.batch_vars:
+            app.batch_vars[idx] = True
+            values = list(app.batch_tree.item(str(idx), "values"))
+            if values:
+                values[0] = "☑"
+                app.batch_tree.item(str(idx), values=values)
 
     def select_none():
-        for _, v in app.batch_vars:
-            v.set(False)
+        for idx in app.batch_vars:
+            app.batch_vars[idx] = False
+            values = list(app.batch_tree.item(str(idx), "values"))
+            if values:
+                values[0] = "☐"
+                app.batch_tree.item(str(idx), values=values)
 
     def start_batch():
-        selected_indices = [idx for idx, var in app.batch_vars if var.get()]
+        selected_indices = [idx for idx, selected in app.batch_vars.items() if selected]
         if not selected_indices:
             messagebox.showwarning("Info", app.t["batch_no_files_selected"], parent=batch_win)
             return
@@ -243,6 +286,7 @@ def open_settings_dialog(app):
     datalab_mode_var = tk.StringVar(value=config.datalab_mode or DEFAULT_DATALAB_MODE)
     api_timeout_var = tk.IntVar(value=config.api_timeout_seconds)
     stream_transcription_var = tk.BooleanVar(value=config.stream_transcription)
+    batch_parallel_workers_var = tk.IntVar(value=config.batch_parallel_workers)
 
     ttk.Label(general_tab, text=app.t["settings_provider_label"], font=("Segoe UI", 10, "bold")).pack(anchor="w")
     provider_combo = ttk.Combobox(
@@ -507,6 +551,25 @@ def open_settings_dialog(app):
         bootstyle="round-toggle",
     ).pack(anchor="w", pady=(0, 10))
 
+    ttk.Label(general_tab, text=app.t["settings_batch_parallel_workers_label"]).pack(anchor="w")
+    batch_parallel_workers_spin = ttk.Spinbox(
+        general_tab,
+        from_=1,
+        to=8,
+        increment=1,
+        textvariable=batch_parallel_workers_var,
+        width=10,
+    )
+    batch_parallel_workers_spin.pack(anchor="w", pady=(2, 4))
+    ttk.Label(
+        general_tab,
+        text=app.t["settings_batch_parallel_workers_help"],
+        bootstyle="secondary",
+        font=("Segoe UI", 8),
+        wraplength=640,
+        justify=LEFT,
+    ).pack(anchor="w", pady=(0, 10))
+
     def save_settings():
         app.llm_provider = provider_var.get()
         app.api_key = api_key_var.get().strip()
@@ -545,6 +608,15 @@ def open_settings_dialog(app):
             return
         app.stream_transcription = bool(stream_transcription_var.get())
         try:
+            app.batch_parallel_workers = max(1, min(int(batch_parallel_workers_var.get()), 8))
+        except (tk.TclError, ValueError):
+            messagebox.showerror(
+                app.t["msg_error_title"],
+                app.t["settings_batch_parallel_workers_error"],
+                parent=settings_win,
+            )
+            return
+        try:
             save_app_config(
                 AppConfig(
                     font_size=app.font_size,
@@ -571,6 +643,7 @@ def open_settings_dialog(app):
                     datalab_mode=app.datalab_mode,
                     api_timeout_seconds=app.api_timeout_seconds,
                     stream_transcription=app.stream_transcription,
+                    batch_parallel_workers=app.batch_parallel_workers,
                 ),
                 app.config_file,
             )

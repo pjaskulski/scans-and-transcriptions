@@ -28,6 +28,7 @@ from services.export_service import (
     export_docx,
     export_html_tables_as_files,
     export_html_tables_xlsx,
+    export_markdown,
     export_merged_html_table,
     export_tei,
     export_txt,
@@ -41,6 +42,7 @@ from services.gemini_service import (
     DEFAULT_FIX_MODEL,
     DEFAULT_HTR_MODEL,
     build_nominative_map,
+    correct_transcription,
     extract_entities,
     locate_entities,
     stream_transcribe_image,
@@ -57,6 +59,7 @@ from services.ollama_service import (
     DEFAULT_OLLAMA_BASE_URL,
     DEFAULT_OLLAMA_MODEL,
     build_nominative_map as ollama_build_nominative_map,
+    correct_transcription as ollama_correct_transcription,
     extract_entities as ollama_extract_entities,
     locate_entities as ollama_locate_entities,
     stream_transcribe_image as ollama_stream_transcribe_image,
@@ -169,6 +172,7 @@ class ManuscriptEditor:
         self.datalab_mode = DEFAULT_DATALAB_MODE
         self.api_timeout_seconds = DEFAULT_API_TIMEOUT_SECONDS
         self.stream_transcription = True
+        self.batch_parallel_workers = 1
         self.prompt_text = ""
         self.prompt_filename_var = tk.StringVar(master=self.root, value="Brak (wybierz plik)")
         self.current_folder_var = tk.StringVar(master=self.root, value="Nie wybrano katalogu")
@@ -193,6 +197,7 @@ class ManuscriptEditor:
             "gemini-3.1-flash-lite": (0.25, 1.5),
             "gemini-3-pro-image-previe": (2.0, 12.0),
             "gemini-3.1-flash-image": (0.5, 3.0),
+            "gemini-3.8-flash": (0.75, 3.75),
         }
 
         self.file_pairs = []
@@ -211,10 +216,10 @@ class ManuscriptEditor:
         self.is_transcribing = False
         self.btn_ai = None
         self.stop_batch_flag = False
-        self.batch_checkbox_widgets = []
 
         self.batch_log_label = None
         self.batch_vars = None
+        self.batch_tree = None
         self.batch_progress = None
 
         self.last_entities = [] # zapamiętana lista nazw własnych dla bieżącej strony
@@ -426,6 +431,10 @@ class ManuscriptEditor:
                                   bootstyle="success-outline", width=4, padding=2)
         self.btn_log.pack(side=LEFT, padx=2)
 
+        self.btn_fix_replace = ttk.Button(ai_tools, text="FIX2", command=self.start_fix_replace,
+                                          bootstyle="warning-outline", width=4, padding=2)
+        self.btn_fix_replace.pack(side=LEFT, padx=2)
+
         self.btn_verify = ttk.Button(ai_tools, text="FIX", command=self.start_verification,
                                      bootstyle="success-outline", width=4, padding=2)
         self.btn_verify.pack(side=LEFT, padx=2)
@@ -602,6 +611,7 @@ class ManuscriptEditor:
         self.btn_csv_tooltip = ToolTip(self.btn_csv, self.t["tt_btn_csv"])
         self.btn_log_tooltip = ToolTip(self.btn_log, self.t["tt_btn_log"])
         self.btn_verify_tooltip = ToolTip(self.btn_verify, self.t["tt_btn_verify"])
+        self.btn_fix_replace_tooltip = ToolTip(self.btn_fix_replace, self.t["tt_btn_fix_replace"])
         self.btn_ai_tooltip = ToolTip(self.btn_ai, self.t["tt_btn_ai"])
         self.btn_seria_tooltip = ToolTip(self.btn_seria, self.t["tt_btn_seria"])
         self.btn_export_tooltip = ToolTip(self.btn_export, self.t["tt_btn_export"])
@@ -625,6 +635,7 @@ class ManuscriptEditor:
     def _build_export_menu(self):
         self.export_menu = tk.Menu(self.btn_export, tearoff=0)
         self.export_menu.add_command(label=self.t["export_menu_txt"], command=self.export_all_data)
+        self.export_menu.add_command(label=self.t["export_menu_md"], command=self.export_all_data_markdown)
         self.export_menu.add_command(label=self.t["export_menu_docx"], command=self.export_all_data_docx)
         self.export_menu.add_command(label=self.t["export_menu_html_table"], command=self.export_merged_html_table)
         self.export_menu.add_command(label=self.t["export_menu_html_tables_files"], command=self.export_html_tables_as_files)
@@ -756,6 +767,105 @@ class ManuscriptEditor:
         self.btn_verify.config(state="normal", text="FIX")
 
 
+    def start_fix_replace(self):
+        """ uruchomienie korekty, która zastępuje bieżący tekst transkrypcji """
+        if not self.file_pairs or self.is_transcribing:
+            return
+
+        current_text = self.text_area.get(1.0, tk.END).strip()
+        if not current_text:
+            messagebox.showwarning(self.t["msg_warning"], self.t["msg_fix_replace_empty"], parent=self.root)
+            return
+
+        if not self.ensure_non_ocr_ai_config():
+            return
+
+        if not messagebox.askyesno(
+            self.t["msg_fix_replace_confirm_title"],
+            self.t["msg_fix_replace_confirm_text"],
+            parent=self.root,
+        ):
+            return
+
+        self.clear_all_annotations()
+        self.is_transcribing = True
+        self.btn_fix_replace.config(state="disabled", text="...")
+        self.text_area.config(state="disabled")
+        self.progress_bar.pack(fill=X, pady=(0, 10), before=self.editor_frame)
+        self.progress_bar.start(10)
+
+        img_path = self.get_transcription_image_path(self.file_pairs[self.current_index])
+        threading.Thread(target=self._fix_replace_worker, args=(img_path, current_text), daemon=True).start()
+
+
+    def _fix_replace_worker(self, img_path, original_text):
+        try:
+            if self.llm_provider == "ollama":
+                model, response = ollama_correct_transcription(
+                    img_path,
+                    original_text,
+                    model_name=self.ollama_fix_model,
+                    base_url=self.ollama_base_url,
+                    timeout_seconds=self._ollama_timeout_seconds(),
+                )
+            else:
+                model, response = correct_transcription(
+                    self.api_key,
+                    img_path,
+                    original_text,
+                    model_name=self.fix_model,
+                    timeout_seconds=self.api_timeout_seconds,
+                )
+
+            if response.usage_metadata:
+                self.root.after(0, lambda: self._log_model_usage(model, response.usage_metadata))
+
+            corrected_text = (response.text or "").strip()
+            if corrected_text:
+                self.root.after(0, lambda: self._apply_fix_replace(corrected_text))
+            else:
+                self.root.after(
+                    0,
+                    lambda: messagebox.showerror(
+                        self.t["msg_fix_replace_error_title"],
+                        self.t["msg_fix_replace_empty_response"],
+                        parent=self.root,
+                    ),
+                )
+        except Exception as e:
+            logger.exception("Błąd korekty FIX2: %s", e)
+            self.root.after(
+                0,
+                lambda error=e: messagebox.showerror(
+                    self.t["msg_fix_replace_error_title"],
+                    str(error),
+                    parent=self.root,
+                ),
+            )
+        finally:
+            self.root.after(0, self._fix_replace_finished)
+
+
+    def _apply_fix_replace(self, corrected_text):
+        self.text_area.config(state="normal")
+        self.text_area.delete(1.0, tk.END)
+        self.text_area.insert(tk.END, corrected_text)
+        self.save_current_text(silent=True)
+        messagebox.showinfo(
+            self.t["msg_fix_replace_ok_title"],
+            self.t["msg_fix_replace_ok_text"],
+            parent=self.root,
+        )
+
+
+    def _fix_replace_finished(self):
+        self.progress_bar.stop()
+        self.progress_bar.pack_forget()
+        self.text_area.config(state="normal")
+        self.btn_fix_replace.config(state="normal", text="FIX2")
+        self.is_transcribing = False
+
+
     def _apply_diff(self, old_text, new_text):
         """ podświetlenie różnic w edytorze na podstawie porównania tekstów """
         # konfiguracja tagu dla zmian
@@ -859,6 +969,7 @@ class ManuscriptEditor:
         self.btn_leg_tooltip.update_text(self.t["tt_btn_leg"])
         self.btn_csv_tooltip.update_text(self.t["tt_btn_csv"])
         self.btn_ai_tooltip.update_text(self.t["tt_btn_ai"])
+        self.btn_fix_replace_tooltip.update_text(self.t["tt_btn_fix_replace"])
         self.btn_seria_tooltip.update_text(self.t["tt_btn_seria"])
         self.btn_export_tooltip.update_text(self.t["tt_btn_export"])
         self.btn_save_tooltip.update_text(self.t["tt_btn_save"])
@@ -898,6 +1009,7 @@ class ManuscriptEditor:
             {"text": self.t["table_model"], "stretch": True},
             {"text": self.t["table_input"], "stretch": False},
             {"text": self.t["table_output"], "stretch": False},
+            {"text": self.t["table_thinking"], "stretch": False},
             {"text": self.t["table_cost"], "stretch": False}
         ]
 
@@ -1511,6 +1623,7 @@ class ManuscriptEditor:
             self.datalab_mode = config.datalab_mode
             self.api_timeout_seconds = config.api_timeout_seconds
             self.stream_transcription = config.stream_transcription
+            self.batch_parallel_workers = config.batch_parallel_workers
             if not self.api_key:
                 self.api_key = config.api_key
         except Exception as e:
@@ -1578,6 +1691,11 @@ class ManuscriptEditor:
                         self,
                         "stream_transcription",
                         existing_config.stream_transcription,
+                    ),
+                    batch_parallel_workers=getattr(
+                        self,
+                        "batch_parallel_workers",
+                        existing_config.batch_parallel_workers,
                     ),
                 ),
                 self.config_file,
@@ -2127,6 +2245,37 @@ class ManuscriptEditor:
                                  self.t["msg_export_error_text"] + f":\n{e}", parent=self.root)
 
 
+    def export_all_data_markdown(self):
+        """ eksport wszystkich transkrypcji do jednego pliku markdown z separatorami stron """
+        self.save_current_text(silent=True)
+
+        if not self.file_pairs:
+            messagebox.showwarning(self.t["msg_export_txt_missing_title"],
+                                   self.t["msg_export_txt_missing_text"], parent=self.root)
+            return
+
+        target_path = filedialog.asksaveasfilename(
+            title=self.t["file_dialog_export_md_title"],
+            defaultextension=".md",
+            filetypes=[(self.t["file_type_markdown"], "*.md")],
+            parent=self.root,
+        )
+
+        if not target_path:
+            return
+
+        try:
+            export_markdown(self.file_pairs, target_path)
+            messagebox.showinfo(
+                self.t["msg_csv_ok_title"],
+                self.t["msg_export_md_text"] + f":\n{os.path.basename(target_path)}",
+                parent=self.root,
+            )
+        except Exception as e:
+            messagebox.showerror(self.t["msg_export_error_title"],
+                                 self.t["msg_export_error_text"] + f":\n{e}", parent=self.root)
+
+
     def export_merged_html_table(self):
         """ eksport tabel HTML z wielu transkrypcji do jednej tabeli """
         self.save_current_text(silent=True)
@@ -2434,8 +2583,8 @@ class ManuscriptEditor:
                 if response.text:
                     # przekazanie fragmentu tekstu do aktualizacji UI
                     self.root.after(0, self._append_stream_text, response.text)
-                    if response.usage_metadata:
-                        loop_usage_metadata = response.usage_metadata
+                if response.usage_metadata:
+                    loop_usage_metadata = response.usage_metadata
 
             if loop_usage_metadata:
                 self.root.after(0, lambda: self._log_model_usage(model, loop_usage_metadata))

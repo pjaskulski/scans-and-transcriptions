@@ -27,6 +27,7 @@ class AppConfig:
     datalab_mode: str = "balanced"
     api_timeout_seconds: int = 300
     stream_transcription: bool = True
+    batch_parallel_workers: int = 1
 
 
 @dataclass
